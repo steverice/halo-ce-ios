@@ -33,15 +33,17 @@ So a campaign level's load holds the screen itself:
   and its first frame all start after the screen has gone.
 
 The band's place is the load's progress, which moves smoothly and never
-back. The copy fills the first half of READ_SHARE; when the level has been
-read, newly scheduled preparation jobs fill the range to COMPILE_END. Each
-library or pipeline job advances it when finished, including completions
-that preceded the first poll. The denominator is sealed after the map's
-warmup has registered its jobs. Cached resources need no new job; nested
-specializations and variants finish with their parent pipeline. Elapsed
-time alone does not advance the picture. Smoothing only approaches the
-measured target. Later first-draw work still gates the end through the
-outstanding count, without changing the sealed denominator.
+back, and is time spent evenly: COMPILE_END times elapsed / (elapsed + what
+is left). What is left is estimated from the work still to do: the level's
+textures to upscale at the rate so far, the level's read, and the compiles
+(each library or pipeline job counts when finished, including completions
+that preceded the first poll; the denominator is sealed after the map's
+warmup has registered its jobs; cached resources need no new job; nested
+specializations and variants finish with their parent pipeline). A long wait
+therefore fills the bar over its whole length, and the loading chant's layers,
+which come in with the bar (progress_bar.c), build up across it. Smoothing
+only approaches the target. Later first-draw work still gates the end through
+the outstanding count, without changing the sealed denominator.
 Once the work is done and the minimum has passed, the screen goes on into
 the level's start (the tail): the level's first ticks run behind it (the
 opening script needs three to start its cutscene and a few more for its fade
@@ -123,15 +125,16 @@ enum
 	END_MILLISECONDS = 500,
 };
 
-/* the shares of the progress the level's read and the compiles take */
-#define READ_SHARE 0.15f
 /* the work and the minimum time end here; the tail fills the rest */
 #define COMPILE_END 0.9f
-/* the screen is dark at the bar's start (the picture and the light band follow sin(pi t)): while the level's textures
-   are upscaled first, the bar stands from UPSCALE_FIRST to UPSCALE_SHARE, so the blue picture is up, and the read and
-   the compiles then fill the rest of the way */
-#define UPSCALE_FIRST 0.12f
-#define UPSCALE_SHARE 0.8f
+/* The bar's progress is time, spent evenly: the displayed value is COMPILE_END times elapsed / (elapsed + what is left),
+   with what is left estimated from the work still to do (the textures' units at the rate so far, the level's read, the
+   compiles from their own rate), never from a share of the bar given to a phase. A wait that is 25 s long then fills the
+   bar over 25 s, and the chant's layers (progress_bar.c: they come in at 0.4, 0.5 and 0.55) build up across it. The
+   guesses, in milliseconds, before the first measurement of each: */
+#define UPSCALE_GUESS_MILLISECONDS 8000
+#define READ_GUESS_MILLISECONDS 500
+#define COMPILE_GUESS_MILLISECONDS 1500
 /* the displayed progress eases toward its target with this time constant */
 #define EASE_SECONDS 0.15f
 /* ... and toward the end, over the tail, with this one */
@@ -164,7 +167,11 @@ static struct
 	boolean upscale_waiting; /* the wait for the level's upscaled textures */
 	boolean upscale_pending; /* the wait has begun (the worker may still be listing the textures): the bar stands lit */
 	real upscale_fraction;   /* 0 to 1: how much of that wait's work is done */
-	real upscale_base;       /* where the bar stands when the wait is over (0 if there was none): the rest fills from here */
+	unsigned long upscale_began;   /* system_milliseconds when the worker began making the level's textures (0 until then) */
+	unsigned long long upscale_done, upscale_total; /* that work's units */
+	unsigned long phase_began;     /* system_milliseconds when the level's read began (after the wait, if there was one) */
+	unsigned long loaded;          /* system_milliseconds when the level was loaded and the compiles began (0 until then) */
+	real floor;                    /* the least the target may be: it only moves forward */
 } loading_screen;
 
 static boolean loading_screen_wanted(void)
@@ -276,11 +283,15 @@ static void loading_screen_upscale_wait(char const *map_name)
 		showed 0% for an instant), and never when they are all ready (the poll says NONE at once) */
 		loading_screen.upscale_waiting = texture_upscale_level_note_visible((enum texture_upscale_level_wait)state, total);
 		loading_screen.upscale_fraction = total ? (real)((double)done / (double)total) : 0.0f;
-		loading_screen.upscale_base = loading_screen.upscale_waiting ? UPSCALE_SHARE : UPSCALE_FIRST;
+		loading_screen.upscale_done = done;
+		loading_screen.upscale_total = total;
+		if (loading_screen.upscale_waiting && !loading_screen.upscale_began)
+			loading_screen.upscale_began = system_milliseconds();
 		loading_screen_frame();
 	}
 	loading_screen.upscale_waiting = FALSE;
 	loading_screen.upscale_pending = FALSE;
+	loading_screen.phase_began = system_milliseconds();
 	host_texture_upscale_level_end(skipped);
 	platform_log("loading screen: upscaled textures %s after %lu ms (%llu of %llu units)",
 		skipped ? "skipped" : state == UPSCALE_LEVEL_NONE ? "ready" : "not all made",
@@ -311,6 +322,7 @@ static void loading_screen_start(char const *map_name, boolean network)
 	loading_screen.active = TRUE;
 	loading_screen.network = network;
 	loading_screen.started = system_milliseconds();
+	loading_screen.phase_began = loading_screen.started;
 	loading_screen.minimum = (unsigned long)(seconds * 1000.0);
 	/* Register jobs before the map's warmup can dispatch or finish them. */
 	gpu_compile_progress(GPU_COMPILE_PROGRESS_BEGIN, &compiles);
@@ -381,22 +393,34 @@ boolean halo_loading_screen_progress(real *progress)
 	}
 	else
 	{
-		/* while a level is copied, the copy's own progress is the read's first half */
-		if (!loading_screen.holding)
-		{
-			real copy = 0.0f;
+		/* what is left, in milliseconds, from the work still to do */
+		unsigned long left;
 
-			target = game_map_loading_in_progress(&copy) ? 0.5f * READ_SHARE * copy : 0.0f;
-			/* while the level's textures are upscaled first, the bar tracks that work in the read's first half */
-			if (loading_screen.upscale_waiting)
-				target = UPSCALE_FIRST + (UPSCALE_SHARE - UPSCALE_FIRST) * loading_screen.upscale_fraction;
-			else if (loading_screen.upscale_pending)
-				target = UPSCALE_FIRST;
+		if (loading_screen.holding)
+		{
+			unsigned long compiling = now - loading_screen.loaded;
+
+			left = loading_screen.work >= 0.1f ? (unsigned long)(compiling * (1.0f - loading_screen.work) / loading_screen.work) :
+				compiling < COMPILE_GUESS_MILLISECONDS ? COMPILE_GUESS_MILLISECONDS - compiling : 300;
 		}
 		else
-			target = READ_SHARE + (COMPILE_END - READ_SHARE) * loading_screen.work;
-		if (!loading_screen.upscale_waiting && !loading_screen.upscale_pending)
-			target = loading_screen.upscale_base + (1.0f - loading_screen.upscale_base) * target;
+		{
+			unsigned long read = now - loading_screen.phase_began;
+
+			left = COMPILE_GUESS_MILLISECONDS + (read < READ_GUESS_MILLISECONDS ? READ_GUESS_MILLISECONDS - read : 150);
+			if (loading_screen.upscale_pending)
+			{
+				unsigned long waited = loading_screen.upscale_began ? now - loading_screen.upscale_began : 0;
+
+				left += loading_screen.upscale_began && loading_screen.upscale_done ?
+					(unsigned long)((double)waited * (double)(loading_screen.upscale_total - loading_screen.upscale_done) /
+						(double)loading_screen.upscale_done) : UPSCALE_GUESS_MILLISECONDS;
+			}
+		}
+		target = COMPILE_END * (real)elapsed / (real)(elapsed + left);
+		if (target < loading_screen.floor)
+			target = loading_screen.floor;
+		loading_screen.floor = target;
 	}
 	loading_screen.shown = halo_loading_progress_advance(loading_screen.shown, target, dt, ease);
 	*progress = loading_screen.shown;
@@ -471,6 +495,7 @@ void halo_loading_screen_finish(void)
 		return;
 	scenario = global_scenario_index != NONE ? global_scenario_get() : NULL;
 	loaded = system_milliseconds();
+	loading_screen.loaded = loaded;
 	/* The list and its unique jobs are now registered; retain completions
 	that happened during parsing, rather than sampling a remaining-work peak. */
 	gpu_compile_progress(GPU_COMPILE_PROGRESS_SEAL, &compiles);
