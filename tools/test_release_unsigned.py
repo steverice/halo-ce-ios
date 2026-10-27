@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import plistlib
+import shutil
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,9 @@ import pytest
 
 from tools import release, release_unsigned
 from tools.test_release import policy
+
+# The Mac app's zip is made and read with macOS's `ditto`, which Linux runners do not have.
+needs_ditto = pytest.mark.skipif(shutil.which("ditto") is None, reason="ditto is macOS only")
 
 GUEST = "a" * 64
 TEAM = "TEAMID1234"
@@ -100,6 +104,7 @@ def test_build_command_is_unsigned_and_leaves_out_icloud_features() -> None:
         assert (f"--{platform}" in command) == (platform != "ios")
 
 
+@needs_ditto
 def test_verify_accepts_an_unsigned_app_with_the_release_guest(tmp_path: Path, unsigned: list[Path]) -> None:
     for platform in release_unsigned.PLATFORMS:
         write_ipa(tmp_path, platform)
@@ -162,6 +167,7 @@ def test_verify_rejects_entries_outside_the_app(tmp_path: Path, unsigned: list[P
         release_unsigned.verify_ipa(ipa, manifest(), "ios")
 
 
+@needs_ditto
 def test_verify_directory_requires_the_guest_and_only_release_files(tmp_path: Path, unsigned: list[Path]) -> None:
     for platform in release_unsigned.PLATFORMS:
         write_ipa(tmp_path, platform)
@@ -244,6 +250,7 @@ def test_ad_hoc_check_rejects_teams_profiles_and_icloud_entitlements(
         release_unsigned.require_ad_hoc(make_app(tmp_path, extra), TEAM, SANDBOX)
 
 
+@needs_ditto
 def test_verify_mac_zip_checks_version_guest_checksum_and_entries(tmp_path: Path, unsigned: list[Path]) -> None:
     archive = write_mac_zip(tmp_path)
     assert release_unsigned.verify_mac_zip(archive, manifest(), team_id=TEAM)["guest_sha256"] == GUEST
