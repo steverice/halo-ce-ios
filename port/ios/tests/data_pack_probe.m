@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <stdarg.h>
 
-static BOOL loggedHTTPFailure, loggedNetworkFailure, loggedHealthy;
+static BOOL loggedHTTPFailure, loggedNetworkFailure, loggedHealthy, loggedDropped, loggedStateMissing;
 void host_logf(int priority, const char *format, ...) {
     (void)priority;
     char line[2048];
@@ -15,6 +15,9 @@ void host_logf(int priority, const char *format, ...) {
     if (strstr(line, "HTTP 500")) loggedHTTPFailure = YES;
     if (strstr(line, "feed check ended")) loggedNetworkFailure = YES;
     if (strstr(line, "snapshot 1 is healthy")) loggedHealthy = YES;
+    if (strstr(line, "dropped (its files are missing)")) loggedDropped = YES;
+    if (strstr(line, "state is missing")) loggedStateMissing = YES;
+    if (getenv("PACK_PROBE_LOG") && strstr(line, "data-packs:")) fprintf(stderr, "log: %s\n", line);
 }
 
 static uint8_t secretKey[64], publicKey[32];
@@ -248,6 +251,81 @@ int main(int argc, const char **argv) { @autoreleasepool {
     CHECK(mkfifo(fifoEnvelope.fileSystemRepresentation, 0600) == 0, "envelope FIFO fixture created");
     CHECK(FailsClosedPromptly(root), "envelope FIFO fails closed without blocking");
     [[NSFileManager defaultManager] removeItemAtPath:root error:NULL];
+    // tvOS keeps the store in Caches, which the system purges file by file between launches. Every partial purge must
+    // leave a store that downloads the feed's current sequence again instead of refusing it as "already seen".
+    @autoreleasepool {
+        NSFileManager *manager = NSFileManager.defaultManager;
+        // 1. The staged (pending) generation is purged before the next launch.
+        root = NewRoot(); store = Store(root);
+        CHECK([store stageEnvelope:Envelope(1, nil, nil) error:NULL], "purge 1: the pack stages");
+        NSString *pendingName = [[manager contentsOfDirectoryAtPath:root error:NULL] filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF BEGINSWITH '1-'"]].firstObject;
+        [manager removeItemAtPath:[root stringByAppendingPathComponent:pendingName] error:NULL];
+        loggedDropped = NO;
+        store = Store(root);
+        CHECK([[store beginLaunch] isEqual:@"/bundled"], "purge 1: a purged pending pack falls back to bundled");
+        CHECK(loggedDropped, "purge 1: the dropped snapshot is logged with its reason");
+        NSError *stageError = nil;
+        CHECK([store stageEnvelope:Envelope(1, nil, nil) error:&stageError], "purge 1: the same sequence downloads again after its files were purged");
+        store = Store(root);
+        CHECK(![[store beginLaunch] isEqual:@"/bundled"], "purge 1: the re-downloaded pack activates");
+        // 2. The healthy, active generation's folder is purged after an update.
+        [store markHealthy];
+        NSString *activeFolder = [store beginLaunch].stringByDeletingLastPathComponent;
+        [manager removeItemAtPath:activeFolder error:NULL];
+        store = Store(root);
+        CHECK([[store beginLaunch] isEqual:@"/bundled"], "purge 2: a purged active pack falls back to bundled");
+        CHECK([store stageEnvelope:Envelope(1, nil, nil) error:&stageError], "purge 2: the purged sequence stages again");
+        // 3. Only the envelope is purged, then only the files folder.
+        for (NSString *piece in @[@"envelope.json", @"files"]) {
+            store = Store(root); [store beginLaunch]; [store markHealthy];
+            NSString *folder = [store beginLaunch].stringByDeletingLastPathComponent;
+            CHECK(![folder isEqual:@"/bundled"], "purge 3: the pack is active before the purge");
+            [manager removeItemAtPath:[folder stringByAppendingPathComponent:piece] error:NULL];
+            store = Store(root);
+            CHECK([[store beginLaunch] isEqual:@"/bundled"], "purge 3: a pack missing its envelope or files falls back to bundled");
+            CHECK([store stageEnvelope:Envelope(1, nil, nil) error:&stageError], "purge 3: a partly purged pack's sequence stages again");
+        }
+        // 4. A newer pack was staged, then purged, while an older healthy pack survives: only the newer one is forgotten.
+        store = Store(root); [store beginLaunch]; [store markHealthy];
+        CHECK([store stageEnvelope:Envelope(2, nil, nil) error:NULL], "purge 4: a newer pack stages");
+        for (NSString *name in [manager contentsOfDirectoryAtPath:root error:NULL])
+            if ([name hasPrefix:@"2-"]) [manager removeItemAtPath:[root stringByAppendingPathComponent:name] error:NULL];
+        store = Store(root);
+        CHECK(![[store beginLaunch] isEqual:@"/bundled"], "purge 4: the surviving healthy pack stays in use");
+        CHECK([store stageEnvelope:Envelope(2, nil, nil) error:&stageError], "purge 4: the purged newer sequence stages again");
+        CHECK(![store stageEnvelope:Envelope(1, nil, nil) error:NULL], "purge 4: the surviving sequence is still not replayed");
+        // 5. The whole folder disappears while the app is running: writes recreate it.
+        [manager removeItemAtPath:root error:NULL];
+        CHECK([store stageEnvelope:Envelope(3, nil, nil) error:&stageError], "purge 5: staging recreates a purged store folder");
+        CHECK([manager fileExistsAtPath:[root stringByAppendingPathComponent:@"state.json"]], "purge 5: the state file is written again");
+        [manager removeItemAtPath:root error:NULL];
+        // 6. A file sits where the store's folder belongs.
+        [manager createDirectoryAtPath:root.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:NULL];
+        [@"x" writeToFile:root atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+        store = Store(root);
+        CHECK([store stageEnvelope:Envelope(1, nil, nil) error:&stageError], "purge 6: a file in the folder's place is replaced");
+        [manager removeItemAtPath:root error:NULL];
+        // 7. State written by 0.6.1 (schema 1) that names nothing but quarantined the purged sequence is started over.
+        root = NewRoot(); store = Store(root);
+        CHECK([store stageEnvelope:Envelope(5, nil, nil) error:NULL], "purge 7: a pack stages");
+        NSMutableDictionary *old = [[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[root stringByAppendingPathComponent:@"state.json"]] options:0 error:NULL] mutableCopy];
+        CHECK([old[@"schema"] intValue] == 2, "purge 7: state carries schema 2");
+        old[@"schema"] = @1; old[@"pending"] = @""; old[@"quarantined"] = @5;
+        [JSON(old) writeToFile:[root stringByAppendingPathComponent:@"state.json"] atomically:YES];
+        loggedStateMissing = NO;
+        store = Store(root);
+        CHECK([store stageEnvelope:Envelope(5, nil, nil) error:&stageError], "purge 7: the old stuck state no longer refuses the feed's sequence");
+        [manager removeItemAtPath:root error:NULL];
+        // 8. The state file is purged but the generations stay: the store starts over and says why.
+        root = NewRoot(); store = Store(root);
+        [store stageEnvelope:Envelope(4, nil, nil) error:NULL];
+        [manager removeItemAtPath:[root stringByAppendingPathComponent:@"state.json"] error:NULL];
+        loggedStateMissing = NO;
+        store = Store(root);
+        CHECK(loggedStateMissing, "purge 8: a missing state file is logged as the reason");
+        CHECK([store stageEnvelope:Envelope(4, nil, nil) error:&stageError], "purge 8: the same sequence stages after the state was purged");
+        [manager removeItemAtPath:root error:NULL];
+    }
     Method method = class_getClassMethod(NSURLSessionConfiguration.class, @selector(ephemeralSessionConfiguration));
     originalConfiguration = method_setImplementation(method, (IMP)ProbeConfiguration);
     root = NewRoot(); store = Store(root); [store beginLaunch];
@@ -296,6 +374,31 @@ int main(int argc, const char **argv) { @autoreleasepool {
     CHECK(loggedHTTPFailure && loggedNetworkFailure, "feed failures reach the runtime logger");
     store = Store(root);
     CHECK(![[store beginLaunch] isEqual:@"/bundled"], "failed checks leave the current snapshot in use");
+    // A purged snapshot must not be answered with a 304: the saved validator is useless without the files it described.
+    {
+        networkFails = NO; networkStatus = 200;
+        NSString *purgedRoot = NewRoot();
+        HostDataPackStore *purged = Store(purgedRoot);
+        [purged beginLaunch];
+        networkEnvelope = Envelope(1, nil, nil);
+        dispatch_semaphore_t done = dispatch_semaphore_create(0);
+        [purged checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"] completion:^(BOOL success) { (void)success; dispatch_semaphore_signal(done); }];
+        CHECK(dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC)) == 0, "purged 304: the first check completes");
+        purged = Store(purgedRoot); [purged beginLaunch]; [purged markHealthy];
+        // The system purges every generation folder but leaves state.json and feed-validator.txt.
+        for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:purgedRoot error:NULL])
+            if ([name hasPrefix:@"1-"]) [NSFileManager.defaultManager removeItemAtPath:[purgedRoot stringByAppendingPathComponent:name] error:NULL];
+        purged = Store(purgedRoot);
+        NSInteger notModifiedBefore = notModified;
+        __block BOOL refetched = NO;
+        [purged checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"] completion:^(BOOL success) { refetched = success; dispatch_semaphore_signal(done); }];
+        CHECK(dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC)) == 0 && refetched, "purged 304: the check downloads the pack again");
+        CHECK(notModified == notModifiedBefore, "purged 304: no conditional request is sent for a snapshot that is gone");
+        [NSThread sleepForTimeInterval:0.3];
+        purged = Store(purgedRoot);
+        CHECK(![[purged beginLaunch] isEqual:@"/bundled"], "purged 304: the re-downloaded pack activates");
+        [NSFileManager.defaultManager removeItemAtPath:purgedRoot error:NULL];
+    }
     // A valid recording library may exceed both former aggregate/download caps.
     @autoreleasepool {
         NSString *recordingRoot = NewRoot();

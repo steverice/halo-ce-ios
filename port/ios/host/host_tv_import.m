@@ -617,8 +617,13 @@ static void host_tv_upscale_only(const char *root) {
 void host_ios_prepare_assets(const char *root) {
     NSString *imported=[[NSString stringWithUTF8String:root] stringByAppendingPathComponent:@"maps"];
     char reason[1024]={0};
-    /* Caches is purgeable, so the import runs again if tvOS evicted the maps. */
-    if(!xiso_maps_ready(imported.fileSystemRepresentation,NULL,0))host_tv_import(root);
+    /* Caches is purgeable, so the import runs again if tvOS evicted the maps. That is the intended recovery: the
+       game data is the player's own disc image and cannot be fetched, only imported again. */
+    if(!xiso_maps_ready(imported.fileSystemRepresentation,reason,sizeof(reason))){
+        host_logf(HOST_LOG_INFO,"maps: game data is missing or incomplete (%s); asking for the disc image again",reason[0]?reason:"no reason given");
+        reason[0]=0;
+        host_tv_import(root);
+    }
     else if(host_texture_upscale_first_run_phase(root))host_tv_upscale_only(root);
     if(!xiso_maps_ready(imported.fileSystemRepresentation,reason,sizeof(reason)))
         host_fatal("The imported maps are not usable (%s).",reason);

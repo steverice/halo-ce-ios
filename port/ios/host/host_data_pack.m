@@ -199,30 +199,108 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     _identity = [self bundledIdentity]; _launchFolder = _bundled;
     if (!([kind isEqual:@"profiles"] || [kind isEqual:@"recordings"] || [kind isEqual:@"shaders"] || [kind isEqual:@"latest"]) ||
         !([channel isEqual:@"stable"] || [channel isEqual:@"tester"]) || key.length != 32 || !validator || ![root isAbsolutePath]) return self;
+    [self openStore];
+    return self;
+}
+/* Opens (or reopens) the store's folder and state. tvOS keeps it under Caches, which the system purges file by file, so
+   whatever is found is repaired rather than trusted: a missing folder is recreated, a file where the folder belongs is
+   replaced, unreadable state starts the store over, and a generation that lost its files is forgotten (see
+   forgetGeneration:state:reason:). Every failure says why. */
+- (BOOL)openStore {
+    _stateValid = NO;
     NSFileManager *manager = NSFileManager.defaultManager;
-    if (![manager fileExistsAtPath:_root] && ![manager createDirectoryAtPath:_root withIntermediateDirectories:YES attributes:nil error:NULL]) return self;
-    if (!PackNode(_root, YES)) return self;
+    NSError *failure = nil;
+    if (![self ensureRoot:&failure]) {
+        host_logf(HOST_LOG_WARN, "data-packs: %s store unavailable (%s)", _kind.UTF8String, failure.localizedDescription.UTF8String ?: "the folder cannot be created");
+        return NO;
+    }
     struct stat info;
-    if (lstat(self.statePath.fileSystemRepresentation, &info) != 0 && errno != ENOENT) return self;
+    BOOL stateMissing = lstat(self.statePath.fileSystemRepresentation, &info) != 0;
+    if (stateMissing && errno != ENOENT) {
+        host_logf(HOST_LOG_WARN, "data-packs: %s store unavailable (the state file cannot be inspected: %s)", _kind.UTF8String, strerror(errno));
+        return NO;
+    }
     if (![self loadState]) {
         // Missing or unusable state (the system may purge Caches file by file) starts the store over, as on a fresh
         // install: every cached generation goes, so none is activated without the state that admitted it.
+        host_logf(HOST_LOG_INFO, "data-packs: %s state %s; starting the store over", _kind.UTF8String, stateMissing ? "is missing (cache purged, or first launch)" : "is unreadable or does not match this build");
         for (NSString *name in [manager contentsOfDirectoryAtPath:_root error:NULL]) {
             if (([self generationName:name] && name.length) || [name hasPrefix:@".stage-"] || [name isEqual:@"state.json"] || [name isEqual:@"feed-validator.txt"]) {
-                if (![manager removeItemAtPath:[self generationPath:name] error:NULL]) return self;
+                NSError *removal = nil;
+                if (![manager removeItemAtPath:[self generationPath:name] error:&removal]) {
+                    host_logf(HOST_LOG_WARN, "data-packs: %s store unavailable (cannot remove %s: %s)", _kind.UTF8String, name.UTF8String, removal.localizedDescription.UTF8String ?: "unknown error");
+                    return NO;
+                }
             }
         }
-        _state = [@{@"schema": @1, @"kind": kind, @"channel": channel, @"compatibility": compatibility, @"highest": @0, @"quarantined": @0, @"active": @"", @"healthy": @"", @"pending": @"", @"trial": @NO, @"last_check": @0} mutableCopy];
+        _state = [@{@"schema": @2, @"kind": _kind, @"channel": _channel, @"compatibility": _compatibility, @"highest": @0, @"quarantined": @0, @"active": @"", @"healthy": @"", @"pending": @"", @"trial": @NO, @"last_check": @0} mutableCopy];
         _stateValid = YES;
+        return YES;
     }
-    return self;
+    // The state is intact, but the purge may have taken generations out from under it. Forget those now, so their
+    // sequences can be fetched again (otherwise the feed's current sequence reads "already seen" and nothing stages).
+    NSMutableDictionary *next = [_state mutableCopy];
+    BOOL changed = NO;
+    for (NSString *field in @[@"pending", @"active", @"healthy"]) {
+        NSString *name = _state[field];
+        if (name.length && [next[field] isEqual:name] && ![self generationIntact:name]) {
+            [self forgetGeneration:name state:next reason:"its files are missing"]; changed = YES;
+        }
+    }
+    if (changed) {
+        NSError *writeFailure = nil;
+        if (![self writeState:next error:&writeFailure]) {
+            host_logf(HOST_LOG_WARN, "data-packs: %s store unavailable (the repaired state cannot be saved: %s)", _kind.UTF8String, writeFailure.localizedDescription.UTF8String ?: "write failed");
+            return NO;
+        }
+        [self prune];
+    }
+    _stateValid = YES;
+    return YES;
+}
+/* The store's folder exists and is a folder. A file in its place, or a link, is cleared; a missing folder is created. */
+- (BOOL)ensureRoot:(NSError **)error {
+    if (PackNode(_root, YES)) return YES;
+    NSFileManager *manager = NSFileManager.defaultManager;
+    struct stat info;
+    if (lstat(_root.fileSystemRepresentation, &info) == 0) {
+        host_logf(HOST_LOG_WARN, "data-packs: %s folder is not a folder; replacing it", _kind.UTF8String);
+        if (![manager removeItemAtPath:_root error:error]) return NO;
+    }
+    if (![manager createDirectoryAtPath:_root withIntermediateDirectories:YES attributes:nil error:error]) return NO;
+    return PackNode(_root, YES) ? YES : PackError(error, @"Pack root is unavailable");
+}
+/* A generation has its envelope and files folder; generation: checks the content. */
+- (BOOL)generationIntact:(NSString *)name {
+    NSString *folder = [self generationPath:name];
+    return PackNode([folder stringByAppendingPathComponent:@"envelope.json"], NO) && PackNode([folder stringByAppendingPathComponent:@"files"], YES);
+}
+/* Drops a generation whose files are gone or damaged, without quarantining it: the sequence is not bad, only lost. When it
+   was the newest one seen, "highest" falls back to the newest that remains, and the saved ETag goes, so the feed's same
+   sequence downloads again. Only the state dictionary changes; the caller saves it. */
+- (void)forgetGeneration:(NSString *)name state:(NSMutableDictionary *)state reason:(const char *)reason {
+    uint64_t sequence = [[[name componentsSeparatedByString:@"-"] firstObject] longLongValue];
+    host_logf(HOST_LOG_INFO, "data-packs: %s snapshot %llu dropped (%s); it will be downloaded again", _kind.UTF8String, sequence, reason);
+    for (NSString *field in @[@"active", @"healthy", @"pending"]) if ([state[field] isEqual:name]) state[field] = @"";
+    // A trial whose candidate is gone ends; the last healthy snapshot (if it remains) is the active one again.
+    if ([state[@"trial"] boolValue] && ![state[@"active"] length]) { state[@"active"] = state[@"healthy"]; state[@"trial"] = @NO; }
+    if ([state[@"highest"] unsignedLongLongValue] == sequence) {
+        uint64_t highest = [state[@"quarantined"] unsignedLongLongValue];
+        for (NSString *field in @[@"active", @"healthy", @"pending"]) {
+            NSString *other = state[field];
+            if (other.length) highest = MAX(highest, (uint64_t)[[[other componentsSeparatedByString:@"-"] firstObject] longLongValue]);
+        }
+        state[@"highest"] = @(highest);
+    }
+    [NSFileManager.defaultManager removeItemAtPath:[self generationPath:name] error:NULL];
+    [NSFileManager.defaultManager removeItemAtPath:self.validatorPath error:NULL];
 }
 - (BOOL)loadState {
     NSString *kind = _kind, *channel = _channel, *compatibility = _compatibility;
     {
         NSDictionary *state = PackJSON(PackRead(self.statePath, 8192));
         NSArray *keys = @[@"schema", @"kind", @"channel", @"compatibility", @"highest", @"quarantined", @"active", @"healthy", @"pending", @"trial", @"last_check"];
-        if (!PackKeys(state, keys) || !PackInteger(state[@"schema"], 1, 1) || ![state[@"kind"] isEqual:kind] || ![state[@"channel"] isEqual:channel] || ![state[@"compatibility"] isEqual:compatibility] || !PackInteger(state[@"highest"], 0, PackMaxSequence) || !PackInteger(state[@"quarantined"], 0, [state[@"highest"] unsignedLongLongValue]) || ![self generationName:state[@"active"]] || ![self generationName:state[@"healthy"]] || ![self generationName:state[@"pending"]] || ![state[@"trial"] isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)state[@"trial"]) != CFBooleanGetTypeID() || ![state[@"last_check"] isKindOfClass:NSNumber.class] || !isfinite([state[@"last_check"] doubleValue]) || [state[@"last_check"] doubleValue] < 0) return NO;
+        if (!PackKeys(state, keys) || !PackInteger(state[@"schema"], 2, 2) || ![state[@"kind"] isEqual:kind] || ![state[@"channel"] isEqual:channel] || ![state[@"compatibility"] isEqual:compatibility] || !PackInteger(state[@"highest"], 0, PackMaxSequence) || !PackInteger(state[@"quarantined"], 0, [state[@"highest"] unsignedLongLongValue]) || ![self generationName:state[@"active"]] || ![self generationName:state[@"healthy"]] || ![self generationName:state[@"pending"]] || ![state[@"trial"] isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)state[@"trial"]) != CFBooleanGetTypeID() || ![state[@"last_check"] isKindOfClass:NSNumber.class] || !isfinite([state[@"last_check"] doubleValue]) || [state[@"last_check"] doubleValue] < 0) return NO;
         for (NSString *field in @[@"active", @"healthy", @"pending"]) {
             NSString *name = state[field];
             if (name.length && ([[name componentsSeparatedByString:@"-"][0] longLongValue] > [state[@"highest"] longLongValue] || [[name componentsSeparatedByString:@"-"][0] longLongValue] <= 0)) return NO;
@@ -236,7 +314,8 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     return YES;
 }
 - (BOOL)writeState:(NSDictionary *)state error:(NSError **)error {
-    if (!PackNode(_root, YES)) return PackError(error, @"Pack root is unavailable");
+    // The folder may have been purged since the store opened; writing recreates it.
+    if (![self ensureRoot:error]) return NO;
     NSData *bytes = [NSJSONSerialization dataWithJSONObject:state options:0 error:error];
     // A failed atomic write leaves the previous file, which still matches _state.
     if (!bytes || ![bytes writeToFile:self.statePath options:NSDataWritingAtomic error:error]) return NO;
@@ -345,10 +424,14 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     NSString *active = next[@"active"];
     NSDictionary *activePack = active.length ? [self generation:active] : nil;
     if (active.length && !activePack) {
-        [self quarantine:active state:next];
+        // Files lost to a purge are forgotten (so the sequence downloads again); damaged content stays quarantined.
+        if (![self generationIntact:active]) [self forgetGeneration:active state:next reason:"its files are missing"]; else [self quarantine:active state:next];
         active = next[@"healthy"];
         activePack = active.length ? [self generation:active] : nil;
-        if (!activePack) { active = @""; next[@"healthy"] = @""; }
+        if (!activePack) {
+            if (active.length && ![self generationIntact:active]) [self forgetGeneration:active state:next reason:"its files are missing"];
+            active = @""; next[@"healthy"] = @"";
+        }
         next[@"active"] = active;
     }
     NSString *pending = next[@"pending"];
@@ -357,7 +440,8 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
         if (candidate && [candidate[@"manifest"][@"sequence"] unsignedLongLongValue] > [next[@"quarantined"] unsignedLongLongValue]) {
             active = pending; activePack = candidate;
             next[@"active"] = pending; next[@"trial"] = @YES;
-        } else [self quarantine:pending state:next];
+        } else if (!candidate && ![self generationIntact:pending]) [self forgetGeneration:pending state:next reason:"its files are missing"];
+        else [self quarantine:pending state:next];
         next[@"pending"] = @"";
     }
     if (![self writeState:next error:NULL]) { [self selectBundled]; return [_launchFolder copy]; }
@@ -375,7 +459,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
         }
         NSString *active = next[@"active"];
         if (active.length && ![self generation:active]) {
-            [self quarantine:active state:next];
+            if (![self generationIntact:active]) [self forgetGeneration:active state:next reason:"its files are missing"]; else [self quarantine:active state:next];
             next[@"active"] = @""; next[@"healthy"] = @"";
         }
         if (![self writeState:next error:NULL]) return @{@"folder": _bundled, @"metadata": [self bundledIdentity]};
@@ -386,7 +470,8 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     if (!pack || [pack[@"manifest"][@"sequence"] unsignedLongLongValue] <= [_state[@"quarantined"] unsignedLongLongValue]) {
         if (_stateValid && name.length) {
             NSMutableDictionary *next = [_state mutableCopy];
-            [self quarantine:name state:next]; next[@"pending"] = @"";
+            if (!pack && ![self generationIntact:name]) [self forgetGeneration:name state:next reason:"its files are missing"]; else [self quarantine:name state:next];
+            next[@"pending"] = @"";
             [self writeState:next error:NULL];
         }
         name = _state[@"active"];
@@ -455,7 +540,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     return nil;
 }
 - (BOOL)stageEnvelope:(NSData *)data error:(NSError **)error { @synchronized(self) {
-    if (!_stateValid) return PackError(error, @"Pack state is unavailable or malformed");
+    if (!_stateValid && ![self openStore]) return PackError(error, @"Pack state is unavailable or malformed");
     NSDictionary *authenticated = nil;
     NSDictionary *pack = [self verifyEnvelope:data authenticated:&authenticated error:error];
     if (!pack) {
@@ -487,7 +572,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     NSString *temporary = [self generationPath:[@".stage-" stringByAppendingString:NSUUID.UUID.UUIDString]];
     NSString *filesPath = [temporary stringByAppendingPathComponent:@"files"];
     NSFileManager *manager = NSFileManager.defaultManager;
-    if (!PackNode(_root, YES) || ![manager createDirectoryAtPath:filesPath withIntermediateDirectories:YES attributes:nil error:error]) return NO;
+    if (![self ensureRoot:error] || ![manager createDirectoryAtPath:filesPath withIntermediateDirectories:YES attributes:nil error:error]) return NO;
     BOOL success = NO;
     @try {
         for (NSString *file in files) {
@@ -534,11 +619,14 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
 - (NSString *)savedValidator {
     NSString *text = [NSString stringWithContentsOfFile:self.validatorPath encoding:NSUTF8StringEncoding error:NULL];
     NSArray *parts = [text componentsSeparatedByString:@"\n"];
-    BOOL installed = [_state[@"active"] length] || [_state[@"pending"] length];
+    // A snapshot named by the state but gone from disk is not installed: asking for a 304 then would leave nothing to use.
+    NSString *installedName = [_state[@"pending"] length] ? _state[@"pending"] : _state[@"active"];
+    BOOL installed = [installedName length] && [self generationIntact:installedName];
     return parts.count == 2 && installed && [parts[0] isEqual:[_state[@"highest"] stringValue]] ? parts[1] : nil;
 }
 - (void)checkForUpdateAtURL:(NSURL *)url { [self checkForUpdateAtURL:url completion:nil]; }
 - (void)checkForUpdateAtURL:(NSURL *)url completion:(void (^)(BOOL))completion { @synchronized(self) {
+    if (!_stateValid && !_session) [self openStore];
     if (!_stateValid || _session || ![url.scheme.lowercaseString isEqual:@"https"] || !url.host.length || url.user || url.password || url.query || url.fragment) {
         if (completion) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ completion(NO); });
         return;
