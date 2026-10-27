@@ -692,6 +692,14 @@ void input_abstraction_update(
 					break;
 			}
 			keyboard_controls_update(controller_index, state);
+			/* port: the player does not move, look or act behind an open menu
+			(the pause menus, the scores): a network game keeps running behind
+			its menu, and the sticks and D-pad that navigate the menu would
+			otherwise also walk the player */
+			if (ui_widgets_active())
+			{
+				csmemset(state, 0, sizeof(*state));
+			}
 			input_abstraction_globals.controller_available[controller_index] = TRUE;
 		}
 		else

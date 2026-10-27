@@ -60,8 +60,10 @@ int host_ios_gamepad_type(SDL_Gamepad *pad) {
     return SDL_GetGamepadID(pad)==touch_id?SDL_GAMEPAD_TYPE_XBOX360:SDL_GetGamepadType(pad);
 }
 /* The guest publishes this hint while any in-game menu (the campaign's pause
-   screen, a network game's pause menu, the scores) is up. The network game
-   keeps running behind its menu, so the touch pad must not feed it. */
+   screen, a network game's pause menu, the scores) is up. The guest ignores
+   the player's movement, look and buttons then (input_abstraction_update), so
+   the sticks and D-pad reach only the menu; fire and grenade (the triggers)
+   and the buttons the menus do not read are kept off the pad here too. */
 static int touch_menu_up(void) { return SDL_GetHintBoolean("VISR_PAUSE_MENU",0); }
 /* What the menus read from the pad: accept, back, the D-pad and Start. */
 static int touch_menu_button(int button) {
@@ -72,9 +74,8 @@ static int touch_menu_button(int button) {
 }
 int host_ios_gamepad_axis(SDL_Gamepad *pad,int axis) {
     int value=SDL_GetGamepadAxis(pad,axis);
-    /* Keep touch movement, look, fire and grenades out of in-game menus;
-       hardware still navigates them through the merge below. */
-    if(SDL_GetGamepadID(pad)==touch_id && (host_touch_replay_blocked(&replay_gate) || touch_menu_up()))
+    if(SDL_GetGamepadID(pad)==touch_id && (host_touch_replay_blocked(&replay_gate) ||
+        (axis>=SDL_GAMEPAD_AXIS_LEFT_TRIGGER && touch_menu_up())))
         value=0;
     if(SDL_GetGamepadID(pad)==touch_id && primary_hardware) {
         int physical=SDL_GetGamepadAxis(SDL_GetGamepadFromID(primary_hardware),axis);
