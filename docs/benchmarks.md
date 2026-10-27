@@ -40,19 +40,19 @@ Not measured: OpenCE web build-280 (Only measured with the frame cap on or with 
 
 ### iPhone and iPad
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
 Coming soon with VISR 0.6.0
 
 ### Apple TV
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
 Coming soon with VISR 0.6.0
 
 ### Vision Pro
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster.
+Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster.
 
 ```mermaid
 ---
@@ -87,9 +87,9 @@ The snapshot holds 39 measured windows for 5 ports on 2 platforms (Mac, Vision P
 - **Mac** (M4 Mac mini, M6 Mac mini; frame cap on): Safari `requestAnimationFrame` callbacks, which measure browser scheduling. Ports: OpenCE web.
 - **Vision Pro** (M2 Vision Pro; frame cap on): The app's own benchmark report: VISR's report, or the telemetry of a port that has no timing tool, counted over the same warm-up and sampling window. Ports: master-chef.
 
-master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display; lifting its cap crashes it, so it has no uncapped rows.
+master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display, so it has no uncapped rows.
 
-Vision Pro charts use runs presented at the device's display rate with each app's default settings, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.
+Vision Pro charts use runs presented at the device's display rate, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.
 
 ### Suites
 

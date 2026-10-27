@@ -63,7 +63,7 @@
 </section>
 <section class="bench" data-platform="iphone-ipad" aria-labelledby="h-iphone-ipad">
 <h2 id="h-iphone-ipad">iPhone and iPad</h2>
-<p>Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device&#x27;s display rate with each app&#x27;s default settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device&#x27;s display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
 <div class="bench-media"><figure class="device device-ipad"><div class="bench-chart"><p class="bench-empty">Coming soon with VISR 0.6.0</p></div></figure>
 <p class="bench-legend"></p>
@@ -73,7 +73,7 @@
 </section>
 <section class="bench" data-platform="apple-tv" aria-labelledby="h-apple-tv">
 <h2 id="h-apple-tv">Apple TV</h2>
-<p>Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device&#x27;s display rate with each app&#x27;s default settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device&#x27;s display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
 <div class="bench-media"><figure class="device device-tv"><div class="bench-chart"><p class="bench-empty">Coming soon with VISR 0.6.0</p></div></figure>
 <p class="bench-legend"></p>
@@ -83,7 +83,7 @@
 </section>
 <section class="bench" data-platform="vision-pro" aria-labelledby="h-vision-pro">
 <h2 id="h-vision-pro">Vision Pro</h2>
-<p>Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device&#x27;s display rate with each app&#x27;s default settings. Each bar is the geometric mean of the average over the suite&#x27;s windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster.</p>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device&#x27;s display rate. Each bar is the geometric mean of the average over the suite&#x27;s windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster.</p>
 <div class="bench-grid">
 <div class="bench-media"><figure class="device device-vision device-glass"><svg class="glass-shape" viewBox="1.2 4.9 21.6 13.2" preserveAspectRatio="none" aria-hidden="true"><defs><clipPath id="glass-clip" clipPathUnits="objectBoundingBox"><path transform="translate(.5 .5) scale(0.98) translate(-.5 -.5) scale(0.046296 0.075758) translate(-1.2 -4.9)" d="M2.5 10.5c0-2.5 2-4.5 4.5-4.5h10c2.5 0 4.5 2 4.5 4.5v1.2c0 3-2.1 5.3-4.8 5.3-1.6 0-2.7-.45-3.5-1.05-.6-.4-1.8-.4-2.4 0-.8.6-1.9 1.05-3.5 1.05-2.7 0-4.8-2.3-4.8-5.3z"/></clipPath></defs><path d="M2.5 10.5c0-2.5 2-4.5 4.5-4.5h10c2.5 0 4.5 2 4.5 4.5v1.2c0 3-2.1 5.3-4.8 5.3-1.6 0-2.7-.45-3.5-1.05-.6-.4-1.8-.4-2.4 0-.8.6-1.9 1.05-3.5 1.05-2.7 0-4.8-2.3-4.8-5.3z"/></svg><div class="glass-screen"><div class="bench-chart"><img src="benchmarks/static-vision-pro.svg" alt="Vision Pro: average and 1% low fps per build, Campaign suite"></div></div></figure>
 <p class="bench-legend"><span class="swatch avg" aria-hidden="true"></span> Average fps</p>
@@ -100,8 +100,8 @@
 <li><strong>Mac</strong> (M4 Mac mini, M6 Mac mini; frame cap on): Safari <code>requestAnimationFrame</code> callbacks, which measure browser scheduling. Ports: OpenCE web.</li>
 <li><strong>Vision Pro</strong> (M2 Vision Pro; frame cap on): The app's own benchmark report: VISR's report, or the telemetry of a port that has no timing tool, counted over the same warm-up and sampling window. Ports: master-chef.</li>
 </ul>
-<p>master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display; lifting its cap crashes it, so it has no uncapped rows.</p>
-<p>Vision Pro charts use runs presented at the device's display rate with each app's default settings, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.</p>
+<p>master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display, so it has no uncapped rows.</p>
+<p>Vision Pro charts use runs presented at the device's display rate, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.</p>
 <h3>Suites</h3>
 <ul>
 <li><strong>Campaign:</strong> every measured window: the opening of a10, the opening of b30, and the b30 beach encounter 90 seconds later (<code>b30 +90 s</code>). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set. A set with fewer than three valid rounds is marked incomplete. Measured on 5 ports: VISR, OpenCE-macOS, OpenCE web, CoreCE, master-chef.</li>
@@ -189,7 +189,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
  {
   "slug": "iphone-ipad",
   "heading": "iPhone and iPad",
-  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.",
   "empty": "Coming soon with VISR 0.6.0",
   "box": "M1 iPad Pro",
   "series_labels": [
@@ -241,7 +241,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
  {
   "slug": "apple-tv",
   "heading": "Apple TV",
-  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.",
   "empty": "Coming soon with VISR 0.6.0",
   "box": "",
   "series_labels": [
@@ -293,7 +293,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
  {
   "slug": "vision-pro",
   "heading": "Vision Pro",
-  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster.",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster.",
   "empty": "No Vision Pro results yet.",
   "box": "M2 Vision Pro",
   "series_labels": [

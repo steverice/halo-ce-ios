@@ -72,8 +72,8 @@ def timing_section(rows: list[dict]) -> list[str]:
     chef = [row for row in ok if row["port"] == "master-chef" and row["cap_fps"] not in ("", "0")]
     if chef:
         caps = "/".join(sorted({row["cap_fps"] for row in chef}))
-        lines.extend([f"master-chef runs at a fixed {caps} fps as shipped, below the {chef[0]['display_hz']} Hz display; "
-                      "lifting its cap crashes it, so it has no uncapped rows.", ""])
+        lines.extend([f"master-chef runs at a fixed {caps} fps as shipped, below the {chef[0]['display_hz']} Hz display, "
+                      "so it has no uncapped rows.", ""])
     return lines
 
 
@@ -83,8 +83,8 @@ def device_section(rows: list[dict]) -> list[str]:
     devices = [platform for platform in PLATFORM_ORDER if platform != "Mac" and any(r["platform"] == platform for r in ok)]
     lines = []
     if devices:
-        lines.extend([f"{', '.join(devices)} charts use runs presented at the device's display rate with each app's default "
-                      "settings, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the "
+        lines.extend([f"{', '.join(devices)} charts use runs presented at the device's display rate, "
+                      "not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the "
                       "spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart "
                       "uses the uncapped, matched-stock runs described below.", ""])
     og = [row for row in ok if row["port"] == "halo-og"]

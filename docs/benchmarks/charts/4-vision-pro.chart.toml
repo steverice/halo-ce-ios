@@ -1,6 +1,6 @@
 order = 40
 heading = "Vision Pro"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster."
+paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster."
 empty = "No Vision Pro results yet."
 box = "M2 Vision Pro"
 series_labels = ["Average fps", "1% low fps"]
