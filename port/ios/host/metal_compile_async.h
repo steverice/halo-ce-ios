@@ -295,33 +295,52 @@ static inline int metal_hold_frame(struct metal_hold *hold, int broken, unsigned
 
 /* ---------- holding the level's first frames */
 
-/* the loading screen's end arms it (GPU_COMPILE_PROGRESS_FIRST_FRAME): the
-frames of the level's start that have draws skipped for pipelines still
-compiling (ones the map's shader list did not name) are not shown, so the
-window keeps the loading screen's last picture until a frame draws everything,
-for at most limit frames */
+/* the loading screen's end arms it (GPU_COMPILE_PROGRESS_FIRST_FRAME): for
+the level's first frames (window), a frame that has draws skipped for
+pipelines still compiling (ones the map's shader list did not name) is not
+shown, so the window keeps the loading screen's last picture, or the last
+frame that drew everything. The window does not end at the first frame with
+nothing skipped: the frames after it draw what the first did not (the HUD,
+the weapon raised, an effect, the structure from a vertex shader the list
+pairs with other pixel shaders: Blood Gulch's ground on an iPhone, the sky
+alone for three frames), and those make more pipelines. At most limit frames
+in a row are held, so a long compile doesn't freeze the picture */
 struct metal_start_hold
 {
 	int armed;
-	unsigned held;
+	unsigned frames;    /* the window's frames so far */
+	unsigned held;      /* frames held */
+	unsigned shown;     /* frames shown with draws skipped */
+	unsigned in_a_row;  /* frames held in a row */
 };
 
 static inline void metal_start_hold_arm(struct metal_start_hold *hold)
 {
+	memset(hold, 0, sizeof(*hold));
 	hold->armed = 1;
-	hold->held = 0;
 }
 
-/* whether this frame, which skipped this many draws, is not shown */
-static inline int metal_start_hold_frame(struct metal_start_hold *hold, unsigned long skipped, unsigned limit)
+/* whether this frame, which skipped this many draws, is not shown; window
+frames from the arming, at most limit held in a row */
+static inline int metal_start_hold_frame(struct metal_start_hold *hold, unsigned long skipped, unsigned window,
+	unsigned limit)
 {
 	if (!hold->armed)
 		return 0;
-	if (!skipped || hold->held >= limit)
-	{
+	if (++hold->frames >= window)
 		hold->armed = 0;
+	if (!skipped)
+	{
+		hold->in_a_row = 0;
 		return 0;
 	}
+	if (hold->in_a_row >= limit)
+	{
+		hold->in_a_row = 0;
+		hold->shown++;
+		return 0;
+	}
+	hold->in_a_row++;
 	hold->held++;
 	return 1;
 }

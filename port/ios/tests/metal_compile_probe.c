@@ -195,22 +195,24 @@ int main(void)
 		assert(!metal_hold_frame(&hold, 0, 3));
 	}
 
-	/* the level's first frames: nothing held until armed; held while a draw is skipped, up to the limit; the
-	first frame with nothing skipped ends it, and a later skipping frame is not held */
+	/* the level's first frames: nothing held until armed; in the window, every frame that skips a draw is held,
+	including ones after a frame with nothing skipped (the sky alone on Blood Gulch was such a frame, shown by
+	the earlier hold that ended at the first whole frame); at most limit in a row; nothing after the window */
 	{
 		struct metal_start_hold start = { 0 };
 
-		assert(!metal_start_hold_frame(&start, 5, 3));
+		assert(!metal_start_hold_frame(&start, 5, 6, 2));
 		metal_start_hold_arm(&start);
-		assert(metal_start_hold_frame(&start, 5, 3));
-		assert(metal_start_hold_frame(&start, 2, 3));
-		assert(!metal_start_hold_frame(&start, 0, 3));
-		assert(!start.armed && !metal_start_hold_frame(&start, 5, 3));
-		metal_start_hold_arm(&start);
-		assert(metal_start_hold_frame(&start, 1, 2));
-		assert(metal_start_hold_frame(&start, 1, 2));
-		assert(!metal_start_hold_frame(&start, 1, 2));
-		assert(!start.armed);
+		assert(metal_start_hold_frame(&start, 5, 6, 2));
+		assert(!metal_start_hold_frame(&start, 0, 6, 2));
+		assert(metal_start_hold_frame(&start, 3, 6, 2));
+		assert(metal_start_hold_frame(&start, 3, 6, 2));
+		assert(!metal_start_hold_frame(&start, 3, 6, 2));
+		assert(start.armed && start.held == 3 && start.shown == 1);
+		assert(metal_start_hold_frame(&start, 1, 6, 2));
+		assert(!start.armed && start.frames == 6);
+		assert(!metal_start_hold_frame(&start, 5, 6, 2));
+		assert(start.held == 4 && start.shown == 1);
 	}
 
 	/* the launch's line: once, at the first frame with nothing skipped and

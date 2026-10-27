@@ -1629,8 +1629,9 @@ static struct metal_skip_frame skip_frame;
 static struct metal_hold window_hold;
 /* the window's frames held in a row at most: half a second at 60 Hz */
 #define HOLD_LIMIT 30
-/* the level's first frames are held for this many frames at most (metal_start_hold) */
-#define START_HOLD_LIMIT 120
+/* the level's first frames, which hold any frame that skips a draw (metal_start_hold), and the most held in a row */
+#define START_HOLD_WINDOW 180
+#define START_HOLD_LIMIT 30
 static struct metal_start_hold start_hold;
 /* gpu_metal_present held this frame (async_frame_end counts it) */
 static BOOL frame_held;
@@ -6928,13 +6929,11 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		if (async_compiles && start_hold.armed)
 		{
 			/* the level's first frames: one that skips a draw for a pipeline still compiling is not shown */
-			unsigned held_before = start_hold.held;
-
-			if (metal_start_hold_frame(&start_hold, skip_frame.skipped, START_HOLD_LIMIT))
+			if (metal_start_hold_frame(&start_hold, skip_frame.skipped, START_HOLD_WINDOW, START_HOLD_LIMIT))
 				frame_held = YES;
-			else
-				platform_log("Metal: the level's first frame was shown after %u held for pipelines still compiling",
-					held_before);
+			if (!start_hold.armed)
+				platform_log("Metal: the level's first %u frames: %u held for pipelines still compiling, %u shown with "
+					"draws skipped", start_hold.frames, start_hold.held, start_hold.shown);
 		}
 		unsynced = frame_rate_sync();
 		gpu_metal_presentation_configure(layer);
