@@ -22,9 +22,10 @@ PAGE = ROOT / "docs/benchmarks.md"
 BEGIN = "<!-- BEGIN CHARTS -->"
 END = "<!-- END CHARTS -->"
 
-SUITES = ("campaign", "multiplayer", "co-op")
+SUITES = ("campaign", "combat", "cutscenes", "multiplayer", "co-op")
 SUITE_CHOICES = (*SUITES, "overall")
-SUITE_NAMES = {"campaign": "Campaign", "multiplayer": "Multiplayer", "co-op": "Co-op", "overall": "Overall"}
+SUITE_NAMES = {"campaign": "Campaign", "combat": "Combat", "cutscenes": "Cutscenes", "multiplayer": "Multiplayer",
+               "co-op": "Co-op", "overall": "Overall"}
 DEFAULT_SUITE = "campaign"
 
 
@@ -140,18 +141,17 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
                 "label": group[0]["label"], "date": max(row["date"] for row in group),
                 "url": next((row.get("release_url", "") for row in group if row.get("release_url", "")), "")}
         if suite == "overall":
-            parts = [_suite_value(group, query, name) for name in SUITES]
-            missing = [name for name, part in zip(SUITES, parts) if part[0] is None]
-            if missing:
-                value, reason = None, "missing " + ", ".join(missing)
-                kinds = {part[2] for part in parts if part[0] is None}
-                kind = "not_supported" if kinds == {"not_supported"} else "not_measured"
+            # Which suites count is decided per chart, from the builds drawn (see `_drawn`); here each build keeps
+            # its own suite values. A build with none is listed with the first suite's reason.
+            parts = {name: _suite_value(group, query, name) for name in SUITES}
+            found = {name: part[0] for name, part in parts.items() if part[0] is not None}
+            if found:
+                value, reason, kind = {"avg": 0.0, "low": None, "details": {}, "rows": []}, "", ""
             else:
-                value = {"avg": statistics.geometric_mean(p[0]["avg"] for p in parts), "details": {},
-                         "low": (statistics.geometric_mean(p[0]["low"] for p in parts)
-                                 if all(p[0]["low"] is not None for p in parts) else None),
-                         "rows": [r for p in parts for r in p[0]["rows"]]}
-                reason, kind = "", ""
+                first = parts[SUITES[0]]
+                value, reason = None, first[1]
+                kind = "not_supported" if {part[2] for part in parts.values()} == {"not_supported"} else "not_measured"
+            base["suites"] = found
         else:
             value, reason, kind = _suite_value(group, query, suite)
         entries.append({**base, "value": value, "reason": reason, "kind": kind})
@@ -164,7 +164,42 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
             newest[entry["port"]] = entry
     for entry in entries:
         entry["default"] = newest.get(entry["port"]) is entry
-    return {"entries": entries, "box": next((r["host"] for r in platform_rows if r["reference_box"].lower() == "true"), "")}
+    return {"overall": suite == "overall", "entries": entries, "box": next((r["host"] for r in platform_rows if r["reference_box"].lower() == "true"), "")}
+
+
+def covered_suites(pool: list[dict]) -> list[str]:
+    """The suites every build in the pool has measured: what Overall covers on a chart."""
+    return [name for name in SUITES if pool and all(e["suites"].get(name) for e in pool)]
+
+
+def _overall_value(entry: dict, covered: list[str]) -> dict:
+    parts = [entry["suites"][name] for name in covered]
+    return {"avg": statistics.geometric_mean(p["avg"] for p in parts), "details": {},
+            "low": (statistics.geometric_mean(p["low"] for p in parts) if all(p["low"] is not None for p in parts) else None),
+            "rows": [r for p in parts for r in p["rows"]]}
+
+
+def _drawn(built: dict, selected: set[str] | None) -> list[dict]:
+    """The builds a chart draws. For Overall, the geometric mean runs over the suites that every drawn build
+    has measured, so the bars stay comparable; no common suite means nothing is drawn."""
+    pool = [e for e in built["entries"] if e["value"] is not None
+            and (entry_key(e) in selected if selected is not None else e["default"])]
+    if not built.get("overall"):
+        return pool
+    covered = covered_suites(pool)
+    return [{**e, "value": _overall_value(e, covered)} for e in pool] if covered else []
+
+
+def overall_note(built: dict, selected: set[str] | None = None) -> str:
+    """The caption sentence naming the suites Overall covers on this chart, or "" for any other suite."""
+    if not built.get("overall"):
+        return ""
+    pool = [e for e in built["entries"] if e["value"] is not None
+            and (entry_key(e) in selected if selected is not None else e["default"])]
+    covered = [SUITE_NAMES[name] for name in covered_suites(pool)]
+    if not covered:
+        return ""
+    return "Overall covers " + (covered[0] if len(covered) == 1 else ", ".join(covered[:-1]) + " and " + covered[-1]) + "."
 
 
 def chart_title(spec: dict, built: dict, suite: str) -> str:
@@ -180,8 +215,7 @@ def header_text(chart: dict) -> str:
 
 def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None) -> str | None:
     """Mermaid text for the ticked entries that have values, or None when there is nothing to draw."""
-    drawn = [e for e in built["entries"] if e["value"] is not None
-             and (entry_key(e) in selected if selected is not None else e["default"])]
+    drawn = _drawn(built, selected)
     if not drawn:
         return None
     chart, rename = spec["chart"], spec.get("rename", {})
@@ -228,8 +262,7 @@ def direction_note(spec: dict, built: dict | None = None) -> str:
 
 def has_lows(built: dict, selected: set[str] | None = None) -> bool:
     """Whether any drawn build has a 1% low, so the second bar series is drawn."""
-    drawn = [e for e in built["entries"] if e["value"] is not None
-             and (entry_key(e) in selected if selected is not None else e["default"])]
+    drawn = _drawn(built, selected)
     return any(e["value"]["low"] is not None for e in drawn)
 
 
@@ -265,13 +298,13 @@ def _missing_windows(entry: dict, windows: list[str]) -> str:
 def caption_parts(built: dict, selected: set[str] | None = None, columns: list[str] | None = None,
                   windows: list[str] | None = None) -> list[tuple[str, str]]:
     """The caption as (text, url) pieces; a piece with a url is a build's label, linked to its release page."""
-    drawn = [e for e in built["entries"] if e["value"] is not None
-             and (entry_key(e) in selected if selected is not None else e["default"])]
+    drawn = _drawn(built, selected)
     if not drawn:
         return []
     columns = columns or []
     windows = windows or []
-    parts = [(f"{built['box']}. ", "")]
+    note = overall_note(built, selected)
+    parts = [(f"{built['box']}. " + (note + " " if note else ""), "")]
     for index, e in enumerate(drawn):
         parts.append((e["label"], e.get("url", "")))
         parts.append((f" (build {e['build'] or 'unknown'}, measured {e['date']}"
@@ -289,7 +322,11 @@ def caption(built: dict, selected: set[str] | None = None, columns: list[str] | 
 
 def empty_text(spec: dict, built: dict) -> str:
     """The explanation for a platform with no builds, or for a selection with nothing to draw."""
-    return spec["empty"].strip() if not built["entries"] else "No build has data for this suite yet."
+    if not built["entries"]:
+        return spec["empty"].strip()
+    if built.get("overall") and any(e["value"] is not None for e in built["entries"]):
+        return "No suite has been measured on every build in this chart."
+    return "No build has data for this suite yet."
 
 
 def _link(entry: dict) -> str:

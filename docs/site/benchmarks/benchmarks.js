@@ -2,8 +2,8 @@
 // tools/perf_compare/charts.py; tools/test_perf_compare_sheet.py checks that both give the same chart text.
 "use strict";
 
-const SUITES = ["campaign", "multiplayer", "co-op"];
-const SUITE_NAMES = { campaign: "Campaign", multiplayer: "Multiplayer", "co-op": "Co-op", overall: "Overall" };
+const SUITES = ["campaign", "combat", "cutscenes", "multiplayer", "co-op"];
+const SUITE_NAMES = { campaign: "Campaign", combat: "Combat", cutscenes: "Cutscenes", multiplayer: "Multiplayer", "co-op": "Co-op", overall: "Overall" };
 const DEFAULT_SUITE = "campaign";
 
 function parseCsv(text) {
@@ -90,16 +90,14 @@ function model(rows, query, suite) {
       label: first.label, date: group.map((r) => r.date).reduce((a, b) => (a > b ? a : b)),
       url: (group.find((r) => r.release_url) || {}).release_url || "" };
     if (suite === "overall") {
+      // Which suites count is decided per chart, from the builds drawn (see drawn()); here each build keeps its own suite values.
       const parts = SUITES.map((name) => suiteValue(group, query, name));
-      const missing = SUITES.filter((name, i) => parts[i][0] === null);
-      if (missing.length) {
-        entry.value = null; entry.reason = "missing " + missing.join(", ");
-        const kinds = new Set(parts.filter((p) => p[0] === null).map((p) => p[2]));
-        entry.kind = kinds.size === 1 && kinds.has("not_supported") ? "not_supported" : "not_measured";
-      }
+      entry.suites = {};
+      SUITES.forEach((name, i) => { if (parts[i][0] !== null) entry.suites[name] = parts[i][0]; });
+      if (Object.keys(entry.suites).length) { entry.value = { avg: 0, low: null, details: {}, rows: [] }; entry.reason = ""; entry.kind = ""; }
       else {
-        entry.value = { avg: geometricMean(parts.map((p) => p[0].avg)), details: {}, low: parts.every((p) => p[0].low !== null) ? geometricMean(parts.map((p) => p[0].low)) : null };
-        entry.reason = ""; entry.kind = "";
+        entry.value = null; entry.reason = parts[0][1];
+        entry.kind = new Set(parts.map((p) => p[2])).size === 1 && parts[0][2] === "not_supported" ? "not_supported" : "not_measured";
       }
     } else [entry.value, entry.reason, entry.kind] = suiteValue(group, query, suite);
     entries.push(entry);
@@ -115,11 +113,37 @@ function model(rows, query, suite) {
   }
   for (const entry of entries) entry.default = newest.get(entry.port) === entry;
   const reference = platformRows.find((row) => String(row.reference_box).toLowerCase() === "true");
-  return { entries, box: reference ? reference.host : "" };
+  return { overall: suite === "overall", entries, box: reference ? reference.host : "" };
 }
 
-function drawn(built, selected) {
+function pool(built, selected) {
   return built.entries.filter((e) => e.value !== null && (selected ? selected.has(entryKey(e)) : e.default));
+}
+
+// The suites every build in the pool has measured: what Overall covers on a chart.
+function coveredSuites(shown) {
+  return shown.length ? SUITES.filter((name) => shown.every((e) => e.suites[name])) : [];
+}
+
+function overallValue(entry, covered) {
+  const parts = covered.map((name) => entry.suites[name]);
+  return { avg: geometricMean(parts.map((p) => p.avg)), details: {}, low: parts.every((p) => p.low !== null) ? geometricMean(parts.map((p) => p.low)) : null, rows: parts.flatMap((p) => p.rows) };
+}
+
+// The builds a chart draws. For Overall the geometric mean runs over the suites every drawn build has measured,
+// so the bars stay comparable; no common suite means nothing is drawn.
+function drawn(built, selected) {
+  const shown = pool(built, selected);
+  if (!built.overall) return shown;
+  const covered = coveredSuites(shown);
+  return covered.length ? shown.map((e) => ({ ...e, value: overallValue(e, covered) })) : [];
+}
+
+function overallNote(built, selected) {
+  if (!built.overall) return "";
+  const names = coveredSuites(pool(built, selected)).map((name) => SUITE_NAMES[name]);
+  if (!names.length) return "";
+  return "Overall covers " + (names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " and " + names[names.length - 1]) + ".";
 }
 
 function headerText(chart, palette) {
@@ -179,7 +203,8 @@ function captionParts(built, selected, columns, windows) {
   const shown = drawn(built, selected);
   if (!shown.length) return [];
   columns = columns || [];
-  const parts = [[`${built.box}. `, ""]];
+  const note = overallNote(built, selected);
+  const parts = [[`${built.box}. ` + (note ? note + " " : ""), ""]];
   shown.forEach((e, i) => {
     parts.push([e.label, e.url || ""]);
     parts.push([` (build ${e.build || "unknown"}, measured ${e.date}` + (columns.length ? `; ${detailText(e, columns)}` : "") + missingWindows(e, windows)
@@ -319,7 +344,9 @@ async function drawChart(container, spec, built, suite, selected) {
   container.replaceChildren();
   if (text === null) {
     const anyData = built.entries.some((e) => e.value !== null);
+    const nothingCommon = built.overall && anyData && pool(built, selected).length;
     container.append(el("p", { class: "bench-empty" }, !built.entries.length ? spec.empty
+      : nothingCommon ? "No suite has been measured on every build in this chart."
       : anyData ? "Nothing is ticked." : "No build has data for this suite yet."));
     return;
   }

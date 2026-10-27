@@ -168,22 +168,73 @@ def test_model_ticks_the_newest_build_of_each_port_and_lists_the_rest_with_reaso
     assert by_key["visr@0.5.1@7"]["value"] == {"avg": pytest.approx(547.7226, abs=1e-3), "low": pytest.approx(200.0), "details": {}, "windows": ["a10", "b30"], "rows": by_key["visr@0.5.1@7"]["value"]["rows"]}
 
 
-def test_suites_without_data_show_not_measured_rows_and_overall_needs_every_suite():
+def test_suites_without_data_show_not_measured_rows():
     built = charts.model(snapshot_rows(), QUERY, "multiplayer")
     assert all(e["value"] is None for e in built["entries"])
     assert {e["reason"] for e in built["entries"] if e["port"] == "visr"} == {"no multiplayer measurements yet"}
-    overall = charts.model(snapshot_rows(), QUERY, "overall")
-    assert {e["reason"] for e in overall["entries"] if e["port"] == "visr"} == {"missing multiplayer, co-op"}
-    assert not any(e["default"] for e in overall["entries"])
 
 
-def test_overall_is_the_geometric_mean_of_each_metric_with_equal_suite_weight():
+def overall_rows(*extra):
+    return snapshot_rows(*extra)
+
+
+def overall_entry(rows, port, version, selected=None):
+    built = charts.model(rows, QUERY, "overall")
+    [entry] = [e for e in charts._drawn(built, selected) if e["port"] == port and e["version"] == version]
+    return built, entry["value"]
+
+
+def test_overall_covers_only_the_suites_every_drawn_build_has_measured():
+    # VISR also has Multiplayer and Combat; OpenCE-macOS has Campaign only: the chart compares on Campaign.
     extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"},
-             {**box_record(fps=(300.0, 300.0), p99=20.0), "suite": "co-op"}]
-    built = charts.model(snapshot_rows() + csv_rows(sheet_export.rows(summary(*extra))), QUERY, "overall")
-    value = [e for e in built["entries"] if e["port"] == "visr" and e["version"] == "0.5.1"][0]["value"]
-    assert value["avg"] == pytest.approx((500 ** 0.5 * 600 ** 0.5 * 100 * 300) ** (1 / 3))
-    assert value["low"] == pytest.approx((200 * 100 * 50) ** (1 / 3))
+             {**box_record(fps=(300.0, 300.0), p99=20.0), "suite": "combat"}]
+    rows = overall_rows(*[r for r in extra])
+    built, visr = overall_entry(rows, "visr", "0.5.1")
+    assert charts.covered_suites([e for e in built["entries"] if e["default"] and e["value"]]) == ["campaign"]
+    assert visr["avg"] == pytest.approx((500 * 600) ** 0.5)
+    assert charts.overall_note(built) == "Overall covers Campaign."
+    assert "M6 Mac mini. Overall covers Campaign. " in charts.caption(built)
+
+
+def test_overall_grows_when_every_drawn_build_gains_a_suite():
+    extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"},
+             {**box_record(port="opence-macos", version="v1.0.2", build="2", fps=(50.0, 50.0), p99=40.0), "suite": "multiplayer"}]
+    built, visr = overall_entry(overall_rows(*extra), "visr", "0.5.1")
+    assert charts.overall_note(built) == "Overall covers Campaign and Multiplayer."
+    assert visr["avg"] == pytest.approx(((500 * 600) ** 0.5 * 100) ** 0.5)
+    assert visr["low"] == pytest.approx((200 * 100) ** 0.5)
+    _, other = overall_entry(overall_rows(*extra), "opence-macos", "v1.0.2")
+    assert other["avg"] == pytest.approx(((500 * 600) ** 0.5 * 50) ** 0.5)
+
+
+def test_overall_coverage_follows_the_ticked_builds():
+    extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"}]
+    rows = overall_rows(*extra)
+    built = charts.model(rows, QUERY, "overall")
+    assert charts.overall_note(built, {"visr@0.5.1@7"}) == "Overall covers Campaign and Multiplayer."
+    assert charts.overall_note(built, {"visr@0.5.1@7", "opence-macos@v1.0.2@2"}) == "Overall covers Campaign."
+    text = charts.source(spec(), built, "overall", {"visr@0.5.1@7"})
+    assert 'title "Overall: uncapped fps, M6 Mac mini"' in text and '["VISR 0.5.1"]' in text
+    assert charts.source(spec(), built, "overall", set()) is None
+
+
+def test_overall_with_no_common_suite_draws_nothing_and_says_why():
+    rows = snapshot_rows(
+        {**box_record(port="corece", version="0.3.0", build="9", fps=(100.0, 100.0)), "suite": "co-op"})
+    built = charts.model(rows, {**QUERY, "port_order": ["visr", "corece"]}, "overall")
+    keys = {"visr@0.5.1@7", "corece@0.3.0@9"}
+    assert charts.source(spec(), built, "overall", keys) is None
+    assert charts.caption(built, keys) == ""
+    # The default view ticks each port's newest build: VISR and OpenCE-macOS share Campaign, CoreCE only has Co-op.
+    assert charts.source(spec(), built, "overall") is None
+    assert charts.empty_text(spec(), built) == "No suite has been measured on every build in this chart."
+
+
+def test_overall_lists_builds_with_no_data_and_defaults_to_the_newest_build_of_each_port():
+    built = charts.model(snapshot_rows(), QUERY, "overall")
+    by_key = {charts.entry_key(e): e for e in built["entries"]}
+    assert by_key["opence-web@@7"]["value"] is None and by_key["opence-web@@7"]["reason"]
+    assert by_key["visr@0.5.1@7"]["default"] and not by_key["visr@main@5"]["default"]
 
 
 def test_not_supported_suite_is_reported_as_not_supported_not_not_measured():
@@ -285,9 +336,11 @@ const fs = require('fs');
 const m = require(process.argv[1] + '/docs/site/benchmarks/benchmarks.js');
 const rows = m.parseCsv(fs.readFileSync(process.argv[1] + '/docs/benchmarks/results.csv', 'utf8'));
 const out = {};
-for (const spec of JSON.parse(fs.readFileSync(0, 'utf8'))) for (const suite of ['campaign', 'multiplayer', 'co-op', 'overall']) {
+for (const spec of JSON.parse(fs.readFileSync(0, 'utf8'))) for (const suite of m.SUITES.concat(['overall'])) {
   const built = m.model(rows, spec.query, suite);
   out[spec.slug + '/' + suite] = [m.chartSource(spec, built, suite), m.captionText(built, null, spec.query.details, spec.query.windows), built.entries.map((e) => [m.entryKey(e), e.default, e.kind, e.reason])];
+  const firstKey = built.entries.length ? new Set([m.entryKey(built.entries[0])]) : new Set();
+  out[spec.slug + '/' + suite + '/first'] = [m.chartSource(spec, built, suite, firstKey), m.captionText(built, firstKey, spec.query.details, spec.query.windows)];
 }
 console.log(JSON.stringify(out));
 """
@@ -300,6 +353,9 @@ console.log(JSON.stringify(out));
             expected = [charts.source(item, built, suite), charts.caption(built, None, item["query"].get("details"), "", item["query"].get("windows")),
                         [[charts.entry_key(e), e["default"], e["kind"], e["reason"]] for e in built["entries"]]]
             assert browser[f"{site_page.slug(item)}/{suite}"] == expected
+            first = {charts.entry_key(built["entries"][0])} if built["entries"] else set()
+            assert browser[f"{site_page.slug(item)}/{suite}/first"] == [
+                charts.source(item, built, suite, first), charts.caption(built, first, item["query"].get("details"), "", item["query"].get("windows"))]
 
 
 def test_fetch_lowercases_sheets_booleans_and_keeps_dropped_zeros_readable():
@@ -571,3 +627,30 @@ def test_last_measured_is_the_newest_date_among_the_summary_and_every_row():
     assert last_measured({"records": [{"date": "2026-10-26"}]}, [{**rows[0], "date": "2026-10-27"}]) == "2026-10-27"
     assert last_measured({}, [{**rows[0], "date": "2026-10-24"}, {**rows[0], "date": "2026-10-25"}]) == "2026-10-25"
     assert last_measured({}, []) == "unknown"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_browser_overall_matches_python_on_mixed_suites():
+    extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"},
+             {**box_record(fps=(300.0, 300.0), p99=20.0), "suite": "combat"},
+             {**box_record(port="opence-macos", version="v1.0.2", build="2", fps=(50.0, 50.0), p99=40.0), "suite": "combat"}]
+    rows = snapshot_rows(*extra)
+    script = """
+const fs = require('fs');
+const m = require(process.argv[1] + '/docs/site/benchmarks/benchmarks.js');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const built = m.model(input.rows, input.spec.query, 'overall');
+console.log(JSON.stringify(input.selections.map((keys) => {
+  const picked = keys === null ? null : new Set(keys);
+  return [m.chartSource(input.spec, built, 'overall', picked), m.captionText(built, picked, [])];
+})));
+"""
+    selections = [None, ["visr@0.5.1@7"], ["visr@0.5.1@7", "opence-macos@v1.0.2@2"], []]
+    done = subprocess.run(["node", "-e", script, str(ROOT)], capture_output=True, text=True, check=True,
+                          input=json.dumps({"rows": rows, "spec": spec(), "selections": selections}))
+    built = charts.model(rows, QUERY, "overall")
+    expected = [[charts.source(spec(), built, "overall", None if keys is None else set(keys)),
+                 charts.caption(built, None if keys is None else set(keys), [])] for keys in selections]
+    assert json.loads(done.stdout) == expected
+    assert "Overall covers Campaign and Combat." in expected[0][1]
+    assert "Overall covers Campaign, Combat and Multiplayer." in expected[1][1]
