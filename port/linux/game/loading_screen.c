@@ -133,6 +133,7 @@ enum
    bar over 25 s, and the chant's layers (progress_bar.c: they come in at 0.4, 0.5 and 0.55) build up across it. The
    guesses, in milliseconds, before the first measurement of each: */
 #define UPSCALE_GUESS_MILLISECONDS 8000
+#define UPSCALE_TRUST_MILLISECONDS 5000
 #define READ_GUESS_MILLISECONDS 500
 #define COMPILE_GUESS_MILLISECONDS 1500
 /* the displayed progress eases toward its target with this time constant */
@@ -412,9 +413,13 @@ boolean halo_loading_screen_progress(real *progress)
 			{
 				unsigned long waited = loading_screen.upscale_began ? now - loading_screen.upscale_began : 0;
 
-				left += loading_screen.upscale_began && loading_screen.upscale_done ?
+				/* the rate so far, trusted more as it is measured for longer (the first textures made are not typical) */
+				unsigned long estimate = loading_screen.upscale_began && loading_screen.upscale_done ?
 					(unsigned long)((double)waited * (double)(loading_screen.upscale_total - loading_screen.upscale_done) /
 						(double)loading_screen.upscale_done) : UPSCALE_GUESS_MILLISECONDS;
+				real trust = waited >= UPSCALE_TRUST_MILLISECONDS ? 1.0f : (real)waited / (real)UPSCALE_TRUST_MILLISECONDS;
+
+				left += (unsigned long)((1.0f - trust) * UPSCALE_GUESS_MILLISECONDS + trust * (real)estimate);
 			}
 		}
 		target = COMPILE_END * (real)elapsed / (real)(elapsed + left);
