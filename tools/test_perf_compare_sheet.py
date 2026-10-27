@@ -193,7 +193,7 @@ def test_not_supported_suite_is_reported_as_not_supported_not_not_measured():
     [entry] = [e for e in built["entries"] if e["port"] == "corece"]
     assert (entry["kind"], entry["reason"]) == ("not_supported", "Does not support split screen")
     text = charts.render_section(spec(), snapshot_rows() + csv_rows(sheet_export.rows(summary(rec))), "co-op")
-    assert "Not supported: CoreCE 0.3.0 (Does not support split screen)." in text
+    assert "Not supported: [CoreCE 0.3.0](https://github.com/mastercheese-dev/CoreCE/releases/tag/build-7) (Does not support split screen)." in text
 
 
 def test_chart_source_draws_average_then_low_for_the_ticked_builds():
@@ -486,3 +486,29 @@ def test_a_build_without_a_1pct_low_keeps_the_series_for_the_builds_that_have_on
     assert "bar [29.9]" in charts.source(spec, built, "campaign", {"master-chef@1.0.3@103"})
     only_chef = charts.model([chef], query, "campaign")
     assert "1% low" not in charts.legend({**spec, "chart": {"marks": ["a", "b"]}}, only_chef)
+
+
+def test_release_urls_name_each_ports_release_page_and_never_a_download():
+    cases = [("visr", "0.6.0", "", "https://github.com/steverice/visr/releases/tag/visr-v0.6.0"),
+             ("beeman", "0.3.0", "", "https://github.com/bmanturner/halo-ce-universal/releases/tag/apple-v0.3.0"),
+             ("corece", "0.3.0", "44", "https://github.com/mastercheese-dev/CoreCE/releases/tag/build-44"),
+             ("snailbbq", "0.2.118-beta", "", "https://github.com/SnailBBQ/Halo-CE-IOS/releases/tag/v0.2.118-beta"),
+             ("halopad", "0.3.12", "", "https://github.com/chrissotraidis/projectreach/releases/tag/v0.3.12"),
+             ("opence-web", "build-280", "280", "https://halocombatevolved.com/")]
+    for port, version, build, expected in cases:
+        assert sheet_export.release_url(port, version, build) == expected
+    assert sheet_export.release_url("unknown-port", "1", "") == ""
+    assert sheet_export.release_url("visr", "main", "") == ""  # a pre-release build has no release page
+    assert sheet_export.release_url("corece", "0.3.0", "") == ""  # its release page is named by build
+    assert all("/download" not in url and "/assets/" not in url for url in sheet_export.RELEASE_PAGES.values())
+
+
+def test_a_builds_label_links_to_its_release_in_the_caption_and_the_builds_list():
+    rows = charts.load_snapshot(ROOT / "docs/benchmarks/results.csv")
+    spec = next(item for item in charts.load_specs(ROOT / "docs/benchmarks/charts") if item["query"]["platform"] == "Apple TV")
+    built = charts.model(rows, spec["query"], "campaign")
+    assert built["entries"][0]["url"] == "https://github.com/steverice/visr/releases/tag/visr-v0.6.0"
+    assert "[VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build" in charts.caption(built, None, None, "markdown")
+    assert charts.caption(built) == "".join(text for text, _ in charts.caption_parts(built))
+    html = site_page.section(spec, rows, "campaign", charts.load_reasons())
+    assert 'href="https://github.com/steverice/visr/releases/tag/visr-v0.6.0"' in html

@@ -135,7 +135,8 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
     entries = []
     for (port, version, build), group in groups.items():
         base = {"port": port, "port_name": group[0]["port_name"], "version": version, "build": build,
-                "label": group[0]["label"], "date": max(row["date"] for row in group)}
+                "label": group[0]["label"], "date": max(row["date"] for row in group),
+                "url": next((row.get("release_url", "") for row in group if row.get("release_url", "")), "")}
         if suite == "overall":
             parts = [_suite_value(group, query, name) for name in SUITES]
             missing = [name for name, part in zip(SUITES, parts) if part[0] is None]
@@ -222,20 +223,34 @@ def _detail_text(entry: dict, columns: list[str]) -> str:
     return ", ".join(parts) if parts else "no frame times reported"
 
 
-def caption(built: dict, selected: set[str] | None = None, columns: list[str] | None = None) -> str:
+def caption_parts(built: dict, selected: set[str] | None = None, columns: list[str] | None = None) -> list[tuple[str, str]]:
+    """The caption as (text, url) pieces; a piece with a url is a build's label, linked to its release page."""
     drawn = [e for e in built["entries"] if e["value"] is not None
              and (entry_key(e) in selected if selected is not None else e["default"])]
     if not drawn:
-        return ""
+        return []
     columns = columns or []
-    builds = "; ".join(f"{e['label']} (build {e['build'] or 'unknown'}, measured {e['date']}"
-                       + (f"; {_detail_text(e, columns)}" if columns else "") + ")" for e in drawn)
-    return f"{built['box']}. {builds}."
+    parts = [(f"{built['box']}. ", "")]
+    for index, e in enumerate(drawn):
+        parts.append((e["label"], e.get("url", "")))
+        parts.append((f" (build {e['build'] or 'unknown'}, measured {e['date']}"
+                      + (f"; {_detail_text(e, columns)}" if columns else "") + ")" + ("; " if index < len(drawn) - 1 else "."), ""))
+    return parts
+
+
+def caption(built: dict, selected: set[str] | None = None, columns: list[str] | None = None, links: str = "") -> str:
+    """The caption text; `links` is "markdown" or "" (plain)."""
+    return "".join(f"[{text}]({url})" if url and links == "markdown" else text
+                   for text, url in caption_parts(built, selected, columns))
 
 
 def empty_text(spec: dict, built: dict) -> str:
     """The explanation for a platform with no builds, or for a selection with nothing to draw."""
     return spec["empty"].strip() if not built["entries"] else "No build has data for this suite yet."
+
+
+def _link(entry: dict) -> str:
+    return f"[{entry['label']}]({entry['url']})" if entry.get("url") else entry["label"]
 
 
 def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE, reasons: dict | None = None) -> str:
@@ -247,11 +262,11 @@ def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE, rea
     if text is None:
         parts.extend([empty_text(spec, built), ""])
     else:
-        parts.extend(["```mermaid", text, "```", "", legend(spec, built), "", caption(built, None, spec["query"].get("details")), ""])
+        parts.extend(["```mermaid", text, "```", "", legend(spec, built), "", caption(built, None, spec["query"].get("details"), "markdown"), ""])
     for kind, heading in (("not_supported", "Not supported"), ("not_measured", "Not measured")):
         skipped = [e for e in built["entries"] if e["value"] is None and e["kind"] == kind]
         if skipped:
-            parts.extend([heading + ": " + "; ".join(f"{e['label']} ({plain_reason(e['reason'], reasons)})" for e in skipped) + ".", ""])
+            parts.extend([heading + ": " + "; ".join(f"{_link(e)} ({plain_reason(e['reason'], reasons)})" for e in skipped) + ".", ""])
     return "\n".join(parts)
 
 

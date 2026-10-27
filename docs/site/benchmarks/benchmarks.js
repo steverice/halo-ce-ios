@@ -85,7 +85,8 @@ function model(rows, query, suite) {
   for (const group of groups.values()) {
     const first = group[0];
     const entry = { port: first.port, port_name: first.port_name, version: first.version, build: first.build,
-      label: first.label, date: group.map((r) => r.date).reduce((a, b) => (a > b ? a : b)) };
+      label: first.label, date: group.map((r) => r.date).reduce((a, b) => (a > b ? a : b)),
+      url: (group.find((r) => r.release_url) || {}).release_url || "" };
     if (suite === "overall") {
       const parts = SUITES.map((name) => suiteValue(group, query, name));
       const missing = SUITES.filter((name, i) => parts[i][0] === null);
@@ -156,12 +157,22 @@ function detailText(entry, columns) {
   return parts.length ? parts.join(", ") : "no frame times reported";
 }
 
-function captionText(built, selected, columns) {
+// The caption as [text, url] pieces; a piece with a url is a build's label, linked to its release page.
+function captionParts(built, selected, columns) {
   const shown = drawn(built, selected);
-  if (!shown.length) return "";
+  if (!shown.length) return [];
   columns = columns || [];
-  return `${built.box}. ` + shown.map((e) => `${e.label} (build ${e.build || "unknown"}, measured ${e.date}`
-    + (columns.length ? `; ${detailText(e, columns)}` : "") + ")").join("; ") + ".";
+  const parts = [[`${built.box}. `, ""]];
+  shown.forEach((e, i) => {
+    parts.push([e.label, e.url || ""]);
+    parts.push([` (build ${e.build || "unknown"}, measured ${e.date}` + (columns.length ? `; ${detailText(e, columns)}` : "")
+      + ")" + (i < shown.length - 1 ? "; " : "."), ""]);
+  });
+  return parts;
+}
+
+function captionText(built, selected, columns) {
+  return captionParts(built, selected, columns).map(([text]) => text).join("");
 }
 
 // Plain-language text for reason codes (docs/benchmarks/reasons.toml); unknown codes pass through.
@@ -174,7 +185,7 @@ function plainReason(reason, reasons) {
   return reason;
 }
 
-if (typeof module !== "undefined") module.exports = { headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, entryKey, SUITES };
+if (typeof module !== "undefined") module.exports = { captionParts, headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, entryKey, SUITES };
 
 // ---- Page ----
 function readHash() {
@@ -300,8 +311,9 @@ function drawList(list, spec, built, state) {
       input.checked = false;
     }
     const word = entry.kind === "not_supported" ? "Not supported" : "Not measured";
-    const text = entry.value === null ? `${entry.label} (${detail}). ${word}: ${plainReason(entry.reason, reasons)}` : `${entry.label} (${detail})`;
-    const label = el("label", { class: entry.value === null ? "off" : "" }, input, " ", text);
+    const name = entry.url ? el("a", { href: entry.url, rel: "noopener" }, entry.label) : entry.label;
+    const rest = entry.value === null ? ` (${detail}). ${word}: ${plainReason(entry.reason, reasons)}` : ` (${detail})`;
+    const label = el("label", { class: entry.value === null ? "off" : "" }, input, " ", name, rest);
     input.addEventListener("change", () => {
       if (input.checked) state.selected[spec.slug].add(key); else state.selected[spec.slug].delete(key);
       state.refresh(spec);
@@ -340,7 +352,8 @@ async function start() {
     drawList(section.querySelector(".bench-rows"), spec, built, state);
     drawLegend(section.querySelector(".bench-legend"), spec,
       !built.entries.length ? 0 : drawn(built, state.selected[spec.slug]).some((e) => e.value.low !== null) ? 2 : 1);
-    section.querySelector(".bench-caption").textContent = captionText(built, state.selected[spec.slug], spec.query.details);
+    section.querySelector(".bench-caption").replaceChildren(...captionParts(built, state.selected[spec.slug], spec.query.details)
+      .map(([text, url]) => (url ? el("a", { href: url, rel: "noopener" }, text) : text)));
     writeHash(state, specs);
   }
   state.refresh = refresh;

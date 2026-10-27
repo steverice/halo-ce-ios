@@ -94,6 +94,11 @@ def spec_payload(specs: list[dict]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=1).replace("</", "<\\/")
 
 
+def anchor(text: str, url: str) -> str:
+    """A build's label, linked to its release page when the data names one."""
+    return (f'<a href="{escape(url)}" rel="noopener">{escape(text)}</a>' if url else escape(text))
+
+
 def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
     built = charts.model(rows, spec["query"], suite)
     name = slug(spec)
@@ -111,11 +116,11 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
         if entry["value"] is None:
             word = "Not supported" if entry["kind"] == "not_supported" else "Not measured"
             items.append(f'<label class="off"><input type="checkbox" value="{escape(charts.entry_key(entry))}" disabled> '
-                         f'{escape(entry["label"])} ({escape(detail)}). {word}: {escape(charts.plain_reason(entry["reason"], reasons))}</label>')
+                         f'{anchor(entry["label"], entry.get("url", ""))} ({escape(detail)}). {word}: {escape(charts.plain_reason(entry["reason"], reasons))}</label>')
         else:
             checked = " checked" if entry["default"] else ""
             items.append(f'<label><input type="checkbox" value="{escape(charts.entry_key(entry))}"{checked}> '
-                         f'{escape(entry["label"])} ({escape(detail)})</label>')
+                         f'{anchor(entry["label"], entry.get("url", ""))} ({escape(detail)})</label>')
     rows_html = f'<legend>Builds</legend>{"".join(items)}' if items else "<legend>Builds</legend>"
     swatches = ""
     if built["entries"]:
@@ -127,7 +132,7 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
 <div class="bench-grid">
 <div class="bench-media"><figure class="device {FRAMES[name]}">{glass_svg() if "glass" in FRAMES[name] else ""}{screen(chart, FRAMES[name])}</figure>
 <p class="bench-legend">{swatches}</p>
-<p class="bench-caption">{escape(charts.caption(built, None, spec["query"].get("details")))}</p></div>
+<p class="bench-caption">{"".join(anchor(text, url) for text, url in charts.caption_parts(built, None, spec["query"].get("details")))}</p></div>
 <fieldset class="bench-rows"{"" if items else " hidden"}>{rows_html}</fieldset>
 </div>
 </section>"""

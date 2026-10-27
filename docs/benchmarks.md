@@ -34,9 +34,9 @@ xychart-beta horizontal
 
 🟦 Average fps 🟨 1% low fps
 
-M6 Mac mini. VISR 0.6.0 (build 20261027.111952, measured 2026-10-27); OpenCE-macOS v1.0.2 (build 2, measured 2026-10-26); CoreCE 0.3.0 (build 44, measured 2026-10-26).
+M6 Mac mini. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27); [OpenCE-macOS v1.0.2](https://github.com/channelramble/OpenCE-macOS/releases/tag/v1.0.2) (build 2, measured 2026-10-26); [CoreCE 0.3.0](https://github.com/mastercheese-dev/CoreCE/releases/tag/build-44) (build 44, measured 2026-10-26).
 
-Not measured: OpenCE web build-280 (Only measured with the frame cap on or with other settings.); Chupathingy v0.8.0g (The app has no frame-time readout we could capture.); Halo OG v0.5.1 (The app has no frame-time readout we could capture.).
+Not measured: [OpenCE web build-280](https://halocombatevolved.com/) (Only measured with the frame cap on or with other settings.); [Chupathingy v0.8.0g](https://github.com/ChupathingyCE/chupathingyce/releases/tag/v0.8.0g) (The app has no frame-time readout we could capture.); [Halo OG v0.5.1](https://github.com/pfista/halo-og/releases/tag/v0.5.1) (The app has no frame-time readout we could capture.).
 
 ### iPhone and iPad
 
@@ -68,7 +68,7 @@ xychart-beta horizontal
 
 🟦 Average fps 🟨 1% low fps
 
-Apple TV HD. VISR 0.6.0 (build 20261027.111952, measured 2026-10-27).
+Apple TV HD. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27).
 
 ### Vision Pro
 
@@ -94,7 +94,7 @@ xychart-beta horizontal
 
 🟦 Average fps 🟨 1% low fps
 
-M2 Vision Pro. VISR 0.6.0 (build 20261027.111952, measured 2026-10-27; 11.8 ms 95th-percentile frame time, 94.1% of frames on time); master-chef 1.0.3 (build 103, measured 2026-10-27; no frame times reported).
+M2 Vision Pro. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; 11.8 ms 95th-percentile frame time, 94.1% of frames on time); [master-chef 1.0.3](https://github.com/mitchaiet/master-chef/releases/tag/v1.0.3) (build 103, measured 2026-10-27; no frame times reported).
 
 <!-- END CHARTS -->
 

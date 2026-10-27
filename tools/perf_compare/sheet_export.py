@@ -25,11 +25,39 @@ COLUMNS = (
     "suite", "window", "scenario", "delay_s", "frame_mode", "quality_preset", "warmup_s",
     "resolution", "cap_fps", "display_hz", "rounds",
     "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms", "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct",
-    "thermal", "status", "notes",
+    "thermal", "status", "notes", "release_url",
 )
 
 NUMERIC = ("resolution", "cap_fps", "display_hz", "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms",
            "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct", "thermal")
+
+# Where each port publishes a build: its release page (never a download), or the hosted page for a web build.
+# `{tag}` is the version with a leading v, `{bare}` the version without one, `{build}` the build identifier.
+RELEASE_PAGES = {
+    "visr": "https://github.com/steverice/visr/releases/tag/visr-v{bare}",
+    "opence-macos": "https://github.com/channelramble/OpenCE-macOS/releases/tag/{tag}",
+    "opence-web": "https://halocombatevolved.com/",
+    "corece": "https://github.com/mastercheese-dev/CoreCE/releases/tag/build-{build}",
+    "chupathingy": "https://github.com/ChupathingyCE/chupathingyce/releases/tag/{tag}",
+    "halo-og": "https://github.com/pfista/halo-og/releases/tag/{tag}",
+    "beeman": "https://github.com/bmanturner/halo-ce-universal/releases/tag/apple-v{bare}",
+    "chupathingyce-ios": "https://github.com/JizzyRivers/chupathingyce-ios/releases/tag/{tag}",
+    "halopad": "https://github.com/chrissotraidis/projectreach/releases/tag/{tag}",
+    "snailbbq": "https://github.com/SnailBBQ/Halo-CE-IOS/releases/tag/{tag}",
+    "master-chef": "https://github.com/mitchaiet/master-chef/releases/tag/{tag}",
+}
+
+
+def release_url(port: str, version: str, build: str = "") -> str:
+    """The release page for a build, or an empty string for a port without a known page."""
+    template = RELEASE_PAGES.get(port)
+    if not template or ("{build}" in template and not build):
+        return ""
+    bare = version.removeprefix("apple-").removeprefix("visr-").removeprefix("v")
+    if port != "opence-web" and not bare[:1].isdigit():
+        return ""  # a pre-release build such as VISR main has no release page
+    return template.format(tag="v" + bare, bare=bare, build=build)
+
 
 DESCRIPTIONS = {
     "port": "Port identifier (visr, opence-macos, opence-web, corece, ...). Per-port tabs filter on it.",
@@ -74,6 +102,7 @@ DESCRIPTIONS = {
     "on_time_pct": "Mean share of intervals within 5% of the display rate; empty for uncapped rows.",
     "thermal": "System thermal state at the start and end of the runs.",
     "status": "ok, incomplete (fewer than three rounds), unavailable (could not run), not_supported (the port lacks the feature the suite needs, for example split screen for co-op), or rejected (one row per rejected attempt, with its reason in notes).",
+    "release_url": "The build's release page on the port's own site, or the hosted page for a web build. Never a download link.",
     "notes": "Why a set is unavailable or incomplete.",
 }
 
@@ -143,7 +172,7 @@ def rows(summary: dict) -> list[dict[str, str]]:
                 method=record.get("method", ""), window=scenario if not delay else f"{scenario} +{delay} s",
                 scenario=scenario, suite=record.get("suite") or "campaign", delay_s=delay, frame_mode=record.get("frame_mode", "capped"),
                 quality_preset=record.get("quality_preset", "defaults"), warmup_s=record.get("warmup_seconds", 15),
-                rounds=len(valid),
+                rounds=len(valid), release_url=release_url(port, version, record.get("build") or ""),
             )
             if valid:
                 fps = [run["metrics"]["fps"] for run in valid]
@@ -197,8 +226,9 @@ def layout(summary: dict) -> dict:
              "rows": [[name, DESCRIPTIONS[name]] for name in COLUMNS],
              "note": "results is the only tab to edit. The per-port tabs are read-only views."},
             {"name": "charts", "kind": "summary",
-             "note": "Per platform, for campaign, uncapped, matched-stock sets on the reference box with status ok: "
-                     "the geometric mean over every window of fps_avg and fps_1pct_low, by label. The page uses the same rule."},
+             "note": "Per platform, for campaign sets on the reference box with status ok: the geometric mean over every "
+                     "window of fps_avg and fps_1pct_low, by label. Mac uses uncapped, matched-stock runs; the other platforms "
+                     "use runs presented at the display rate or the profile's frame cap, with default settings. The page uses the same rules."},
             {"name": "results", "kind": "csv", "file": "results.csv", "columns": list(COLUMNS)}]
     # Each port tab repeats the header row, then filters the data rows on the port column.
     tabs.extend({"name": port, "kind": "formula",
