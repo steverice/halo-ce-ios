@@ -183,6 +183,16 @@ static boolean loading_screen_wanted(void)
 	return reason == NULL;
 }
 
+/* the screen has ended and the level's first frame is next: the renderer
+keeps the screen's last picture until a frame has no draw missing for a
+pipeline still compiling (the shaders the map's list does not name) */
+static void loading_screen_first_frame(void)
+{
+	struct gpu_compile_progress compiles;
+
+	gpu_compile_progress(GPU_COMPILE_PROGRESS_FIRST_FRAME, &compiles);
+}
+
 static void loading_screen_frame(void)
 {
 	unsigned long frame_started = system_milliseconds(), elapsed;
@@ -424,6 +434,7 @@ void halo_loading_screen_tail_frame(void)
 		loading_screen.tail = FALSE;
 		loading_screen.active = FALSE;
 		progress_bar_end();
+		loading_screen_first_frame();
 		halo_main_time_restart();
 	}
 }
@@ -509,6 +520,7 @@ void halo_loading_screen_finish(void)
 	{
 		loading_screen.active = FALSE;
 		progress_bar_end();
+		loading_screen_first_frame();
 	}
 	/* the level's first frame takes its time from here, not from before the load */
 	halo_main_time_restart();

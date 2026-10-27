@@ -195,6 +195,24 @@ int main(void)
 		assert(!metal_hold_frame(&hold, 0, 3));
 	}
 
+	/* the level's first frames: nothing held until armed; held while a draw is skipped, up to the limit; the
+	first frame with nothing skipped ends it, and a later skipping frame is not held */
+	{
+		struct metal_start_hold start = { 0 };
+
+		assert(!metal_start_hold_frame(&start, 5, 3));
+		metal_start_hold_arm(&start);
+		assert(metal_start_hold_frame(&start, 5, 3));
+		assert(metal_start_hold_frame(&start, 2, 3));
+		assert(!metal_start_hold_frame(&start, 0, 3));
+		assert(!start.armed && !metal_start_hold_frame(&start, 5, 3));
+		metal_start_hold_arm(&start);
+		assert(metal_start_hold_frame(&start, 1, 2));
+		assert(metal_start_hold_frame(&start, 1, 2));
+		assert(!metal_start_hold_frame(&start, 1, 2));
+		assert(!start.armed);
+	}
+
 	/* the launch's line: once, at the first frame with nothing skipped and
 	nothing left to compile, after compiles ran */
 	{

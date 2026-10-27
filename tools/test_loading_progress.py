@@ -117,7 +117,9 @@ static void Sleep(unsigned long milliseconds) {
         complete_later = 0;
     }
 }
+static int first_frames;
 void gpu_compile_progress(uint32_t action, struct gpu_compile_progress *progress) {
+    if (action == GPU_COMPILE_PROGRESS_FIRST_FRAME) first_frames++;
     metal_compile_progress_update(&batch, action, progress);
 }
 uint32_t gpu_compiles_outstanding(void) {
@@ -176,6 +178,8 @@ int main(void) {
     assert(now >= 8000 && !complete_later);
     assert(maximum_drawn <= 0.9f);
     finish_tail();
+    /* the tail's end tells the renderer, after the campaign level's first ticks */
+    assert(first_frames >= 1);
     /* A cached load has no new jobs, but the screen's existing minimum
        and ready-level tail still apply. */
     last_t = maximum_drawn = 0;
@@ -202,6 +206,7 @@ int main(void) {
     minimum = 0;
     /* (a network co-op game loads a solo scenario: still no tail) */
     scenario.type = _scenario_type_solo;
+    first_frames = 0;
     halo_loading_screen_begin_network("beavercreek");
     assert(bar_active && loading_screen.network);
     later_token = metal_compile_progress_schedule(&batch);
@@ -212,6 +217,8 @@ int main(void) {
     halo_loading_screen_finish();
     assert(!complete_later && now - began >= 700);
     assert(!halo_loading_screen_tail() && !loading_screen.active && !bar_active);
+    /* the renderer is told the level's first frame is next, once */
+    assert(first_frames == 1);
     /* compiles that never finish end a network hold after its limit, not the campaign's 60 s */
     last_t = 0;
     halo_loading_screen_begin_network("beavercreek");
@@ -224,7 +231,9 @@ int main(void) {
     /* a failed network load cancels at once */
     last_t = 0;
     halo_loading_screen_begin_network("beavercreek");
+    first_frames = 0;
     halo_loading_screen_cancel();
+    assert(first_frames == 0);
     assert(!loading_screen.active && !bar_active);
     puts("PASS: actual loading controller: measured progress, early completions, cache, failure and readiness tail");
     return 0;

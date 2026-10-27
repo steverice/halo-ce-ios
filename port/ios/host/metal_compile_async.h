@@ -293,6 +293,39 @@ static inline int metal_hold_frame(struct metal_hold *hold, int broken, unsigned
 	return 0;
 }
 
+/* ---------- holding the level's first frames */
+
+/* the loading screen's end arms it (GPU_COMPILE_PROGRESS_FIRST_FRAME): the
+frames of the level's start that have draws skipped for pipelines still
+compiling (ones the map's shader list did not name) are not shown, so the
+window keeps the loading screen's last picture until a frame draws everything,
+for at most limit frames */
+struct metal_start_hold
+{
+	int armed;
+	unsigned held;
+};
+
+static inline void metal_start_hold_arm(struct metal_start_hold *hold)
+{
+	hold->armed = 1;
+	hold->held = 0;
+}
+
+/* whether this frame, which skipped this many draws, is not shown */
+static inline int metal_start_hold_frame(struct metal_start_hold *hold, unsigned long skipped, unsigned limit)
+{
+	if (!hold->armed)
+		return 0;
+	if (!skipped || hold->held >= limit)
+	{
+		hold->armed = 0;
+		return 0;
+	}
+	hold->held++;
+	return 1;
+}
+
 /* ---------- the launch's totals */
 
 struct metal_compile_totals

@@ -641,6 +641,9 @@ enum
 	GPU_COMPILE_PROGRESS_BEGIN,
 	GPU_COMPILE_PROGRESS_SEAL,
 	GPU_COMPILE_PROGRESS_END,
+	/* the loading screen has ended and the level's first frame is next: a frame that still has draws
+	skipped for pipelines being compiled is not shown (the Metal backend, display.async_shaders) */
+	GPU_COMPILE_PROGRESS_FIRST_FRAME,
 };
 struct gpu_compile_progress
 {
