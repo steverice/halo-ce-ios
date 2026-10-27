@@ -307,6 +307,76 @@ static unsigned menuRetryAttempt, menuRetryGeneration;
 static BOOL menuRetryScheduled, profileAttempted, recordingAttempted, profileUnpublishedLogged;
 static void refreshMenuKinds(BOOL profile, BOOL recording);
 
+/* The latest-release record (docs/data-packs.md, "Latest release record"): the newest VISR version per platform. */
+static HostDataPackStore *latestStore;
+static NSURL *menuLatestURL;
+static NSString *latestNewerVersion;    /* selectionLock: set from the record, read by publishMenuState */
+static BOOL recordingUnpublished;       /* selectionLock: the recording feed last answered 404 and no later answer replaced it */
+static BOOL latestChecking, latestAttempted, latestHaveRecord;
+
+static BOOL latestVersionParse(NSString *text, long parts[3])
+{
+    NSRegularExpression *pattern = [NSRegularExpression regularExpressionWithPattern:@"^(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})$" options:0 error:NULL];
+    NSTextCheckingResult *match = [text isKindOfClass:NSString.class] ? [pattern firstMatchInString:text options:0 range:NSMakeRange(0, text.length)] : nil;
+    if (!match) return NO;
+    for (NSUInteger i = 0; i < 3; i++) parts[i] = [[text substringWithRange:[match rangeAtIndex:i + 1]] integerValue];
+    return YES;
+}
+/* Whether data is a well-formed record: schema 1 and one to four known platforms, each a plain x.y.z version. */
+static NSDictionary *latestRecordPlatforms(NSData *data)
+{
+    if (data.length == 0 || data.length > 4096) return nil;
+    NSDictionary *record = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+    if (![record isKindOfClass:NSDictionary.class] || record.count != 2 || ![record[@"schema"] isKindOfClass:NSNumber.class] || [record[@"schema"] integerValue] != 1) return nil;
+    NSDictionary *platforms = record[@"platforms"];
+    if (![platforms isKindOfClass:NSDictionary.class] || platforms.count < 1 || platforms.count > 4) return nil;
+    NSSet *known = [NSSet setWithObjects:@"ios", @"tvos", @"visionos", @"macos", nil];
+    long parts[3];
+    for (NSString *platform in platforms) if (![known containsObject:platform] || !latestVersionParse(platforms[platform], parts)) return nil;
+    return platforms;
+}
+/* The record's version for platform when it is newer than running, else nil (also for an unreadable record or running version). */
+static NSString *latestNewerFromRecord(NSData *data, NSString *platform, NSString *running)
+{
+    NSString *latest = latestRecordPlatforms(data)[platform];
+    long a[3], b[3];
+    if (!latest || !latestVersionParse(latest, a) || !latestVersionParse(running, b)) return nil;
+    for (int i = 0; i < 3; i++) if (a[i] != b[i]) return a[i] > b[i] ? latest : nil;
+    return nil;
+}
+static NSString *latestPlatformKey(void)
+{
+#if TARGET_OS_VISION
+    return @"visionos";
+#elif TARGET_OS_TV
+    return @"tvos";
+#elif TARGET_OS_OSX || TARGET_OS_MACCATALYST
+    return @"macos";
+#else
+    return @"ios";
+#endif
+}
+/* Updates queue only: reads the cached record, never the network. */
+static void refreshLatestNewer(void)
+{
+    if (!latestStore) return;
+    NSDictionary *snapshot = [latestStore menuSnapshot];
+    NSString *folder = snapshot[@"folder"], *newer = nil;
+    BOOL have = NO;
+    if (![snapshot[@"metadata"][@"bundled"] boolValue]) {
+        NSData *data = [NSData dataWithContentsOfFile:[folder stringByAppendingPathComponent:@"latest-release.json"]];
+        have = latestRecordPlatforms(data) != nil;
+        newer = latestNewerFromRecord(data, latestPlatformKey(), [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]);
+    }
+    [latestStore retainMenuFolder:folder];
+    latestHaveRecord = have;
+    @synchronized(selectionLock()) { latestNewerVersion = newer; }
+}
+NSString *host_data_updates_latest_newer(void)
+{
+    @synchronized(selectionLock()) { return latestNewerVersion; }
+}
+
 static void publishMenuState(void)
 {
     @synchronized(selectionLock()) {
@@ -315,7 +385,10 @@ static void publishMenuState(void)
         BOOL loading = !ready && !failed && (!menuInitialized || profileLoading || recordingLoading);
         menuState = @{@"ready": @(ready), @"loading": @(loading),
             @"profileFinished": @(menuInitialized && !profileLoading),
-            @"reason": ready || loading ? @"" : !profileReady && !profileLoading ? @"Can't reach the profile server. Benchmarking disabled." : @"Benchmark recordings are unavailable"};
+            @"reason": ready || loading ? @"" :
+                recordingUnpublished && !recordingReady && latestNewerVersion.length ?
+                    [NSString stringWithFormat:@"Benchmarking is no longer supported on this version. Update to VISR %@.", latestNewerVersion] :
+                !profileReady && !profileLoading ? @"Can't reach the profile server. Benchmarking disabled." : @"Benchmark recordings are unavailable"};
     }
 }
 static NSString *bundledFolder(NSString *name)
@@ -402,6 +475,20 @@ static void resetMenuRetry(void)
 {
     menuRetryGeneration++; menuRetryScheduled = NO; menuRetryAttempt = 0;
 }
+/* One more conditional request beside the recording check; once a record is cached it is not repeated by retries. */
+static void checkLatest(void)
+{
+    if (!latestStore || !menuLatestURL || latestChecking || (latestAttempted && latestHaveRecord)) return;
+    latestChecking = YES; latestAttempted = YES;
+    [latestStore checkForUpdateAtURL:menuLatestURL completion:^(BOOL success) {
+        (void)success;
+        dispatch_async(updatesQueue(), ^{
+            latestChecking = NO;
+            refreshLatestNewer();
+            publishMenuState();
+        });
+    }];
+}
 static void refreshMenuKinds(BOOL profile, BOOL recording)
 {
     if (!profiles || !recordings) return;
@@ -446,9 +533,13 @@ static void refreshMenuKinds(BOOL profile, BOOL recording)
         recordingChecking = YES;
         @synchronized(selectionLock()) { if (!menuFrozen && !recordingAttempted) recordingLoading = YES; }
         recordingAttempted = YES;
+        checkLatest();
         [recordings checkForUpdateAtURL:menuRecordingURL completion:^(BOOL success) {
             dispatch_async(updatesQueue(), ^{
                 recordingChecking = NO;
+                /* 404: nothing is published for this guest. An answer of 200 or 304 ends that; a failed request says nothing. */
+                NSInteger answered = recordings.lastFeedStatus;
+                @synchronized(selectionLock()) { if (answered == 404) recordingUnpublished = YES; else if (answered == 200 || answered == 304) recordingUnpublished = NO; }
                 if (!selectionFrozen()) {
                     NSDictionary *snapshot = [recordings menuSnapshot];
                     NSString *selected = publishMenuSnapshot(NO, snapshot);
@@ -511,6 +602,14 @@ static void initializeMenu(struct host_device device)
     recordings = store(@"recordings", bundledRecordings, @"benchmark-catalog-1:" HALO_GUEST_SHA256, ^BOOL(NSString *folder, NSError **error) {
         return host_recording_pack_validate(folder.fileSystemRepresentation, NULL) && host_benchmark_catalog_validate_folder(folder, error);
     });
+    // Beside the recordings: <recording feed directory>/latest.json, so no setting of its own. Never selected for a launch.
+    menuLatestURL = menuRecordingURL ? [menuRecordingURL.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"latest.json"] : nil;
+    latestStore = store(@"latest", [resources stringByAppendingPathComponent:@"latest-release"], @"latest-release-1", ^BOOL(NSString *folder, NSError **error) {
+        BOOL valid = latestRecordPlatforms([NSData dataWithContentsOfFile:[folder stringByAppendingPathComponent:@"latest-release.json"]]) != nil;
+        if (!valid && error) *error = [NSError errorWithDomain:@"VISRDataUpdates" code:4 userInfo:@{NSLocalizedDescriptionKey: @"Invalid latest-release record"}];
+        return valid;
+    });
+    refreshLatestNewer();
     NSDictionary *recording = [recordings menuSnapshot];
     NSString *selectedRecording = publishMenuSnapshot(NO, recording);
     [recordings retainMenuFolder:selectedRecording];

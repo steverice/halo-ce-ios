@@ -103,6 +103,29 @@ python3 tools/data_pack.py --kind recordings --channel tester \
 
 A running benchmark keeps a copied, hashed recording snapshot. Resume uses those same bytes. A changed catalog, profile, guest hash, or baseline setting starts a fresh session. Format validation does not establish replay fidelity; verify actual movement or combat during the measurement window.
 
+## Latest release record
+
+A feed of kind `latest` (compatibility `latest-release-1`) tells a build which VISR version is newest on its platform. It sits beside the recording feed, at `latest.json` in the same directory, and the app derives its URL from the recording feed URL. The envelope holds one file, `latest-release.json`, at most 4 KiB:
+
+```json
+{"schema": 1, "platforms": {"ios": "0.6.0", "tvos": "0.6.0", "visionos": "0.6.0", "macos": "0.6.0"}}
+```
+
+A platform may be absent. Versions are plain `x.y.z`. The record is two levels deep because the pack JSON readers refuse deeper nesting.
+
+The launch menu checks it with the recording check (one conditional request) and keeps the last valid record. When the recording feed answers 404 for this build, no cached catalog exists, and the record names a newer version for this platform, Benchmark stays off and the menu says "Benchmarking is no longer supported on this version. Update to VISR X.Y.Z." Without a newer record, or with a cached catalog, nothing changes. `host_data_updates_latest_newer()` returns the newer version for a future update note.
+
+After a release can be installed, prepare and sign the record:
+
+```sh
+python3 tools/latest_release.py --version 0.6.0 --platforms ios,tvos,macos --output latest-release-input
+python3 tools/data_pack.py --kind latest --channel tester --sequence SEQUENCE \
+  --compatibility latest-release-1 --input latest-release-input \
+  --signing-key /private/path/signing-seed --output latest.json
+```
+
+`latest_release.py` reads the live record, sets the released platforms and never lowers a version. Use the Unix time as the sequence. Commit the envelope as `docs/site/packs/tester/latest.json` with the updated `publication.json`; release policy does not pin it. The release job prints the first command after publishing.
+
 ## Publication
 
 Keep the random 32-byte signing seed outside the repository and distribution artifacts. `tools/data_pack.py` signs locally and does not publish. Serve each envelope directly over HTTPS after review. Publish a higher sequence to restore older shader or recording payload bytes; clients reject repeated and decreasing sequences. Device profiles roll back through a new revision instead ("Profile revisions"). Sign separately for each channel. Changing the pinned public key requires an app update.

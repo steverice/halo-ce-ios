@@ -11,6 +11,9 @@ NSDictionary *host_data_updates_metadata(void);
 void host_data_updates_menu_start(void);
 /* profileFinished waits for the fresh check even when cached data already makes Benchmark ready. */
 NSDictionary *host_data_updates_menu_state(void);
+/* The newest released version for this platform when it is newer than the running build, else nil: read from the
+   cached latest-release record, never from the network. A hook for a future update note. */
+NSString *host_data_updates_latest_newer(void);
 void host_data_updates_menu_finish(void);
 #endif
 void host_data_updates_healthy(void);

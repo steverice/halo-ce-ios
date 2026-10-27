@@ -53,7 +53,7 @@ static void waitForMenuChecks(void)
     }
     assert(!"menu checks finished");
 }
-int main(void)
+int main(int argc, char **argv)
 {
     @autoreleasepool {
         assert(publicKey(@"").length == 0);
@@ -203,6 +203,73 @@ int main(void)
         });
         waitForMenuChecks();
         dispatch_sync(updatesQueue(), ^{ assert(!profileReady && menuRetryScheduled && menuRetryAttempt == 1); });
+        if (argc >= 3) {
+            // A signed record from the publisher: staged, read back, and compared with the running version.
+            NSMutableData *signer = [NSMutableData data];
+            for (int i = 0; i < 64; i += 2) { unsigned v = 0; sscanf(argv[1] + i, "%2x", &v); uint8_t b = v; [signer appendBytes:&b length:1]; }
+            HostDataPackStore *record = [[HostDataPackStore alloc] initWithRoot:[base stringByAppendingPathComponent:@"latest-cache"] bundled:[base stringByAppendingPathComponent:@"none"] kind:@"latest" channel:@"tester" publicKey:signer compatibility:@"latest-release-1" validator:^BOOL(NSString *folder, NSError **error) {
+                (void)error; return latestRecordPlatforms([NSData dataWithContentsOfFile:[folder stringByAppendingPathComponent:@"latest-release.json"]]) != nil;
+            }];
+            assert([[record menuSnapshot][@"metadata"][@"bundled"] boolValue]);
+            NSData *envelope = [NSData dataWithContentsOfFile:@(argv[2])];
+            NSError *stageError = nil;
+            assert(envelope.length > 0 && [record stageEnvelope:envelope error:&stageError]);
+            NSDictionary *snapshot = [record menuSnapshot];
+            assert(![snapshot[@"metadata"][@"bundled"] boolValue] && [snapshot[@"metadata"][@"kind"] isEqual:@"latest"]);
+            NSData *file = [NSData dataWithContentsOfFile:[snapshot[@"folder"] stringByAppendingPathComponent:@"latest-release.json"]];
+            assert([latestNewerFromRecord(file, @"ios", @"0.5.2") isEqual:@"0.6.0"] && !latestNewerFromRecord(file, @"tvos", @"0.5.2"));
+            assert(![record stageEnvelope:envelope error:NULL]);   // the same sequence again
+            // Another kind's store refuses it.
+            HostDataPackStore *other = [[HostDataPackStore alloc] initWithRoot:[base stringByAppendingPathComponent:@"other-cache"] bundled:current kind:@"shaders" channel:@"tester" publicKey:signer compatibility:@"latest-release-1" validator:^BOOL(NSString *f, NSError **e) { (void)f; (void)e; return YES; }];
+            assert(![other stageEnvelope:envelope error:NULL]);
+            puts("PASS: a signed latest-release record is staged and read back");
+        }
+        // A build whose recording feed has nothing published says so and names the newer version, once the latest-release
+        // record has been read; a transport failure keeps the earlier answer, and a cached catalog still wins.
+        assert([latestNewerFromRecord([@"{\"schema\":1,\"platforms\":{\"ios\":\"0.6.0\",\"tvos\":\"0.5.2\"}}" dataUsingEncoding:NSUTF8StringEncoding], @"ios", @"0.5.2") isEqual:@"0.6.0"]);
+        assert(!latestNewerFromRecord([@"{\"schema\":1,\"platforms\":{\"ios\":\"0.6.0\"}}" dataUsingEncoding:NSUTF8StringEncoding], @"ios", @"0.6.0"));
+        assert(!latestNewerFromRecord([@"{\"schema\":1,\"platforms\":{\"ios\":\"0.6.0\"}}" dataUsingEncoding:NSUTF8StringEncoding], @"ios", @"0.10.0"));
+        assert([latestNewerFromRecord([@"{\"schema\":1,\"platforms\":{\"ios\":\"0.10.0\"}}" dataUsingEncoding:NSUTF8StringEncoding], @"ios", @"0.9.9") isEqual:@"0.10.0"]);
+        assert(!latestNewerFromRecord([@"{\"schema\":1,\"platforms\":{\"ios\":\"0.6.0\"}}" dataUsingEncoding:NSUTF8StringEncoding], @"tvos", @"0.5.2"));
+        assert(!latestNewerFromRecord([@"{\"schema\":1,\"platforms\":{\"ios\":\"0.6.0\"}}" dataUsingEncoding:NSUTF8StringEncoding], @"ios", @"0.5.2-beta"));
+        assert(!latestNewerFromRecord([@"{\"schema\":1,\"platforms\":{\"ios\":\"0.6\"}}" dataUsingEncoding:NSUTF8StringEncoding], @"ios", @"0.5.2"));
+        assert(!latestNewerFromRecord([@"{\"schema\":2,\"platforms\":{\"ios\":\"0.6.0\"}}" dataUsingEncoding:NSUTF8StringEncoding], @"ios", @"0.5.2"));
+        assert(!latestNewerFromRecord([@"{\"schema\":1,\"platforms\":{\"ios\":{\"version\":\"0.6.0\"}}}" dataUsingEncoding:NSUTF8StringEncoding], @"ios", @"0.5.2"));
+        assert(!latestNewerFromRecord([@"nope" dataUsingEncoding:NSUTF8StringEncoding], @"ios", @"0.5.2"));
+        NSString *newerText = @"Benchmarking is no longer supported on this version. Update to VISR 0.6.0.";
+        dispatch_sync(updatesQueue(), ^{
+            @synchronized(selectionLock()) {
+                profileReady = YES; profileLoading = NO; recordingReady = NO; recordingLoading = NO; recordingUnpublished = NO; latestNewerVersion = nil;
+            }
+            publishMenuState();
+        });
+        assert([host_data_updates_menu_state()[@"reason"] isEqual:@"Benchmark recordings are unavailable"]);
+        dispatch_sync(updatesQueue(), ^{ @synchronized(selectionLock()) { latestNewerVersion = @"0.6.0"; } publishMenuState(); });
+        assert([host_data_updates_menu_state()[@"reason"] isEqual:@"Benchmark recordings are unavailable"]);   // the feed was not answered 404
+        dispatch_sync(updatesQueue(), ^{ @synchronized(selectionLock()) { recordingUnpublished = YES; } publishMenuState(); });
+        assert([host_data_updates_menu_state()[@"reason"] isEqual:newerText]);
+        assert([host_data_updates_latest_newer() isEqual:@"0.6.0"]);
+        dispatch_sync(updatesQueue(), ^{ @synchronized(selectionLock()) { profileReady = NO; } publishMenuState(); });
+        assert([host_data_updates_menu_state()[@"reason"] isEqual:newerText]);   // it takes priority over the profile-server text
+        dispatch_sync(updatesQueue(), ^{ @synchronized(selectionLock()) { profileReady = YES; recordingReady = YES; } publishMenuState(); });
+        assert([host_data_updates_menu_state()[@"ready"] boolValue] && [host_data_updates_menu_state()[@"reason"] isEqual:@""]);   // a cached catalog wins
+        // The recording completion latches the 404 and clears it only on an answer; a failed request leaves it alone.
+        HostDataPackStore *recordingStore = [[HostDataPackStore alloc] initWithRoot:[base stringByAppendingPathComponent:@"recording-cache"] bundled:current kind:@"recordings" channel:@"tester" publicKey:[NSMutableData dataWithLength:32] compatibility:@"benchmark-catalog-1:test-guest" validator:^BOOL(NSString *folder, NSError **error) { (void)folder; (void)error; return NO; }];
+        dispatch_sync(updatesQueue(), ^{
+            recordings = recordingStore; menuRecordingURL = [NSURL URLWithString:@"https://example.com/packs/tester/recordings.json"];
+            @synchronized(selectionLock()) { menuFrozen = NO; menuVisible = YES; recordingReady = NO; recordingUnpublished = NO; recordingAttempted = NO; }
+            resetMenuRetry(); stubStatus = 404; refreshMenuKinds(NO, YES);
+        });
+        waitForMenuChecks();
+        dispatch_sync(updatesQueue(), ^{ assert(recordingUnpublished); stubStatus = 0; resetMenuRetry(); refreshMenuKinds(NO, YES); });
+        dispatch_sync(updatesQueue(), ^{ publishMenuState(); });
+        waitForMenuChecks();
+        dispatch_sync(updatesQueue(), ^{ assert(recordingUnpublished); stubStatus = 503; resetMenuRetry(); refreshMenuKinds(NO, YES); });
+        waitForMenuChecks();
+        dispatch_sync(updatesQueue(), ^{ assert(recordingUnpublished); });   // a server error says nothing about the feed
+        dispatch_sync(updatesQueue(), ^{ stubStatus = 200; resetMenuRetry(); refreshMenuKinds(NO, YES); });
+        waitForMenuChecks();
+        dispatch_sync(updatesQueue(), ^{ assert(!recordingUnpublished); });   // an answer, even one that stages nothing, ends it
         // Once Play froze the selection, nothing retries.
         host_data_updates_menu_finish();
         dispatch_sync(updatesQueue(), ^{ resetMenuRetry(); scheduleMenuRetry(); assert(!menuRetryScheduled); });
