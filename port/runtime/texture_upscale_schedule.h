@@ -121,6 +121,14 @@ enum texture_upscale_level_wait
 	TEXTURE_UPSCALE_LEVEL_DONE        /* the worker finished the level, ready or not (an error leaves it original) */
 };
 
+/* Whether the loading screen shows its "Upscaling textures ..." line and "Press A to Skip": only while the worker is
+   making the level's textures. Not while it is still listing them (no 0% for an instant), not when they are all ready
+   or the worker is done (nothing extra appears), and not before there is work to count. */
+static inline int texture_upscale_level_note_visible(enum texture_upscale_level_wait state, unsigned long long total_units)
+{
+	return state == TEXTURE_UPSCALE_LEVEL_WORKING && total_units > 0;
+}
+
 /* Where a level's texture list comes from when the level loads. The whole-game catalog is built by the worker after
    every launch and takes a while; a level that loads before it is done (a launch straight into a level, a map added
    since) must not find "its textures are not listed yet" and play original: it reads its own map's list and the

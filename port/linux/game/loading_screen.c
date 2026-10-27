@@ -66,7 +66,7 @@ wait for this one.
 
 On a device that makes upscaled textures (port/ios/host/host_texture_upscale.m),
 halo_loading_screen_begin then waits, drawing the screen, while the level's
-textures that are not upscaled yet are made ("Upscaling assets", A skips).
+textures that are not upscaled yet are made (the same loading screen, with "Upscaling textures ..." and "Press A to Skip" under it; nothing extra when they are all ready).
 A level plays upscaled only if all of them are ready when its load ends; a
 skipped wait plays it with the original textures.
 
@@ -196,6 +196,7 @@ static void loading_screen_frame(void)
 }
 
 #ifdef HALO_IOS
+#include "../../runtime/texture_upscale_schedule.h"
 /* port/ios/host/host_texture_upscale.m (guest_host.h); the states are texture_upscale_schedule.h's */
 int host_texture_upscale_level_begin(const char *name);
 int host_texture_upscale_level_poll(unsigned long long *done, unsigned long long *total);
@@ -253,7 +254,9 @@ static void loading_screen_upscale_wait(char const *map_name)
 			break;
 		}
 		held = down;
-		loading_screen.upscale_waiting = TRUE;
+		/* the note only once the worker is making the level's textures: not while it is still listing them (that
+		showed 0% for an instant), and never when they are all ready (the poll says NONE at once) */
+		loading_screen.upscale_waiting = texture_upscale_level_note_visible((enum texture_upscale_level_wait)state, total);
 		loading_screen.upscale_fraction = total ? (real)((double)done / (double)total) : 0.0f;
 		loading_screen_frame();
 	}
@@ -364,6 +367,9 @@ boolean halo_loading_screen_progress(real *progress)
 			real copy = 0.0f;
 
 			target = game_map_loading_in_progress(&copy) ? 0.5f * READ_SHARE * copy : 0.0f;
+			/* while the level's textures are upscaled first, the bar tracks that work in the read's first half */
+			if (loading_screen.upscale_waiting)
+				target = 0.5f * READ_SHARE * loading_screen.upscale_fraction;
 		}
 		else
 			target = READ_SHARE + (COMPILE_END - READ_SHARE) * loading_screen.work;

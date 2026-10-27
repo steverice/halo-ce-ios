@@ -309,28 +309,39 @@ void render_frame_pregame(
 	return;
 }
 
-/* port: "Upscaling assets", its progress and how to skip, under the loading
-screen's band */
+/* port: while the loading screen waits for the level's textures to be upscaled (and only that is left), a spinner
+and "Upscaling textures ..." at the lower left and "Press A to Skip" at the lower right, in the HUD message font */
+long halo_hud_message_font_index(void); /* port: hud_messaging.c; NONE before the HUD's globals are loaded */
 static void render_loading_upscale_note(
 	real fraction)
 {
+	static char const spinner[] = { '|', '/', '-', '\\' };
 	real_argb_color color = { 1.0f, 1.0f, 1.0f, 1.0f };
 	rectangle2d bounds;
 	long font_tag_index;
 	char text[96];
 
-	font_tag_index = interface_get_tag_index(_interface_font_terminal);
+	(void)fraction;
+	font_tag_index = halo_hud_message_font_index();
+	if (font_tag_index == NONE)
+	{
+		font_tag_index = interface_get_tag_index(_interface_font_terminal);
+	}
 	if (font_tag_index == NONE)
 	{
 		return;
 	}
-	snprintf(text, sizeof(text), "Upscaling assets %d%%   Press A to skip", (int)(fraction * 100.0f));
 	bounds = render.camera.window_bounds;
 	offset_rectangle2d(&bounds, -render.camera.viewport_bounds.x0, -render.camera.viewport_bounds.y0);
-	bounds.y0 = bounds.y1 - 40;
-	bounds.y1 = bounds.y1 - 22;
-	draw_string_set_draw_mode(font_tag_index, NONE, 2, 0, &color);
+	bounds.y0 = bounds.y1 - 48;
+	bounds.y1 = bounds.y1 - 24;
+	bounds.x0 += 40;
+	bounds.x1 -= 40;
+	snprintf(text, sizeof(text), "%c Upscaling textures ...", spinner[(system_milliseconds() / 125) % 4]);
+	draw_string_set_draw_mode(font_tag_index, NONE, 0, 0, &color);
 	rasterizer_draw_string(&bounds, NULL, NULL, 0, text);
+	draw_string_set_draw_mode(font_tag_index, NONE, 1, 0, &color);
+	rasterizer_draw_string(&bounds, NULL, NULL, 0, "Press A to Skip");
 
 	return;
 }

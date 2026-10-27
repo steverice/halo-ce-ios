@@ -74,6 +74,13 @@ static void level_source(void)
 	assert(texture_upscale_level_source(0, 0) == TEXTURE_UPSCALE_LEVEL_SOURCE_DISK);
 	assert(texture_upscale_level_source(0, 1) == TEXTURE_UPSCALE_LEVEL_SOURCE_DISK);
 	assert(texture_upscale_level_source(1, 1) == TEXTURE_UPSCALE_LEVEL_SOURCE_CATALOG);
+	/* the loading screen's upscaling line: only while textures are being made; never for a ready level or a listing */
+	assert(!texture_upscale_level_note_visible(TEXTURE_UPSCALE_LEVEL_NONE, 0));
+	assert(!texture_upscale_level_note_visible(TEXTURE_UPSCALE_LEVEL_NONE, 5000));
+	assert(!texture_upscale_level_note_visible(TEXTURE_UPSCALE_LEVEL_CHECKING, 0));
+	assert(!texture_upscale_level_note_visible(TEXTURE_UPSCALE_LEVEL_WORKING, 0));
+	assert(!texture_upscale_level_note_visible(TEXTURE_UPSCALE_LEVEL_DONE, 5000));
+	assert(texture_upscale_level_note_visible(TEXTURE_UPSCALE_LEVEL_WORKING, 5000));
 }
 
 int main(void)

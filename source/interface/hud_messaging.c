@@ -1243,6 +1243,18 @@ long hud_get_font_index(
 	return hud_msg_def->single_player_font.index;
 }
 
+/* port: the HUD message font for text drawn outside the HUD, NONE before the HUD's globals are loaded */
+long halo_hud_message_font_index(
+	void)
+{
+	if (!hud_msg_def)
+	{
+		return NONE;
+	}
+
+	return hud_get_font_index();
+}
+
 real_argb_color *hud_get_text_color(
 	real_argb_color *result)
 {
