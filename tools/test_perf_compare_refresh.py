@@ -2,6 +2,7 @@
 import importlib.util
 import sys
 from pathlib import Path
+import json
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent / 'perf_compare'))
@@ -462,3 +463,21 @@ def test_native_display_by_drawable_and_port():
     m.validate_config({'drawable': '2560x1920'})
     with pytest.raises(ValueError):
         m.validate_config({'drawable': '640x480'})
+
+
+def test_console_windows_are_not_measured_on_a_target_without_a_console(tmp_path, monkeypatch):
+    m = engine()
+    calls = []
+    monkeypatch.setattr(m, 'fetch', lambda *args: {'version': 'v1', 'sha256': 'a' * 64})
+    monkeypatch.setattr(m.adapters, 'host_state', lambda **kwargs: {})
+
+    def unavailable(target, scenario, *args):
+        calls.append(scenario)
+        raise RuntimeError('console-unavailable')
+    monkeypatch.setattr(m.adapters, 'native', unavailable)
+    config = {'output': str(tmp_path / 'raw'), 'public_machine': 'Mac mini (M4)', 'windows': ['x70-bridge', 'c10'],
+              'targets': [{'id': 'visr', 'console': False}]}
+    m.refresh(config, tmp_path / 'summary.json', tmp_path / 'page.md')
+    assert calls == ['c10']
+    [record] = json.loads((tmp_path / 'summary.json').read_text())['records']
+    assert record['window_status'] == {'x70-bridge': {'status': 'not_measured', 'reason': 'no unattended console'}}

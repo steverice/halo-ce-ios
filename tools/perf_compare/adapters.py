@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 
+import consolewin
 import windows
 
 
@@ -148,6 +149,11 @@ def background_changed(cores, baseline, absolute_limit=1.0):
     return cores > (baseline + 0.5 if baseline is not None else absolute_limit)
 
 
+def has_console(target):
+    """Whether a target can be driven through a console after the level loads (the web build cannot)."""
+    return bool(target.get('console', target['id'] != 'opence-web'))
+
+
 def native(target, scenario, out, config):
     """Retry transient contention, preserving every rejected attempt privately."""
     attempts = 3 if config.get('cpu_policy') == 'baseline' else 1
@@ -232,7 +238,9 @@ def _native(target, scenario, out, config):
     """Reuse isolated data/config and console readiness from the earlier Mac experiments."""
     app = Path(target['app'])
     binary = executable(app)
-    level_map = windows.map_for(scenario)
+    table = windows.load()
+    window = table.get(scenario, {'kind': 'opening'})  # a legacy key (a10) is a plain opening
+    level_map = windows.map_for(scenario, table)
     maps = Path(config['maps'])
     if target.get('data_root'):
         # Some hosts accept only a real maps directory: a prepared data root holds a copy (an APFS clone).
@@ -261,7 +269,8 @@ def _native(target, scenario, out, config):
     text = ('[display]\n' + display + '[audio]\nenabled = false\n[network]\nonline = false\n'
             '[update]\nauto = false\n[community_maps]\nauto_download = false\n'
             '[timer_audio]\nauto_download = false\n[discord]\napplication_id = \"\"\n'
-            '[debug]\ntelnet_console = true\ntelnet_console_port = ' + str(port) + '\n')
+            '[debug]\ntelnet_console = true\ntelnet_console_port = ' + str(port) + '\n'
+            + (f'test_input = "{window["test_input"]}"\n' if window['kind'] == 'bot' and target['id'] == 'visr' else ''))
     (data / 'config.toml').write_text(text)
     (saves / 'config.toml').write_text(text)
     level = level_map if target['id'] == 'visr' else 'levels\\' + level_map + '\\' + level_map
@@ -269,6 +278,8 @@ def _native(target, scenario, out, config):
     env = {**os.environ, 'HALO_DATA_ROOT': str(data), 'HALO_SAVE_ROOT': str(saves),
            'HALO_HOST_DISPLAY': '%dx%d@2' % drawable_window(drawable), 'HALO_RUNNER': '1', 'MTL_HUD_ENABLED': '1',
            'MTL_HUD_LOG_ENABLED': '1'}
+    if window['kind'] == 'bot' and target['id'] != 'visr':
+        env['HALO_TEST_INPUT'] = window['test_input']
     # Execute only the published bundle's declared host. Never read its code.
     stderr = (out / 'app.log').open('w')
     process = subprocess.Popen([str(binary), *target.get('args', [])], cwd=app.parent, env=env,
@@ -301,46 +312,75 @@ def _native(target, scenario, out, config):
         if not ready:
             raise RuntimeError('scenario-not-ready')
         frontmost(process.pid, activate=True)
-        time.sleep(config.get('warmup_seconds', 15))
-        time.sleep(config.get('native_delay_seconds', 0))
-        host_state(check_load=False)
-        if config.get('capture_windows'):
-            capture_window(process.pid, out / 'qualification.png')
-        before = thermal()
-        log_stream = (out / 'hud.log').open('w')
-        if config.get('native_method') == 'metalperftrace':
-            run(['metalperftrace', 'setup', '--enable', 'per-frame-metrics', '--pid', str(process.pid)])
-            # A collect right after setup sometimes returns no frames (6 of 18 first windows in the survey).
-            time.sleep(TRACE_SETUP_WAIT_S)
-        baseline = sample_background(owned={process.pid}) if config.get('cpu_policy') == 'baseline' else None
-        cpu_before = cpu_snapshot()
-        measured_start = time.monotonic()
-        trace_start = time.time()
-        logger = subprocess.Popen(['/usr/bin/log', 'stream', '--style', 'ndjson', '--level', 'debug',
-                                   '--predicate', f'processIdentifier == {process.pid} AND subsystem == "com.apple.metal.hud"'],
-                                  stdout=log_stream, stderr=subprocess.STDOUT)
-        time.sleep(config.get('seconds', 60))
-        if process.poll() is not None:
-            raise RuntimeError('app-exited')
-        trace_end = time.time()
-        host_state(check_load=False)
-        background = background_cpu(cpu_before, cpu_snapshot(), {process.pid})
-        elapsed = time.monotonic() - measured_start
-        (out / 'background-cpu.json').write_text(json.dumps({'seconds': background, 'window': elapsed,
-                                                         'baseline_cores': baseline}))
-        if background_changed(background / elapsed, baseline, config.get('max_background_cores', 1.0)):
-            raise RuntimeError('host-not-quiet')
-        frontmost(process.pid)
-        if config.get('capture_windows'):
-            capture_window(process.pid, out / 'qualification-end.png')
-        if config.get('native_method') == 'metalperftrace':
-            collect = json.loads(run(['metalperftrace', 'collect', '--start', '@' + str(trace_start),
-                                      '--end', '@' + str(trace_end), '--json', str(out / 'traces')]))
-            timelines = [json.loads(run(['metalperftrace', 'overview', '--json', '--json-include-timeline',
-                                        '--predicate', 'pid == ' + str(process.pid), path]))
-                         for path in collect['traces']]
-            (out / 'timeline.json').write_text(json.dumps({'pid': process.pid, 'traces': timelines}))
-        return {'thermal': before['state'] + ' → ' + thermal()['state'], 'drawable': drawable.replace('x', '×'),
+        state = {}
+        owned = {process.pid}
+
+        def begin_sample():
+            nonlocal logger, log_stream
+            host_state(check_load=False)
+            if config.get('capture_windows'):
+                capture_window(process.pid, out / 'qualification.png')
+            state['before'] = thermal()
+            state['log_stream'] = (out / 'hud.log').open('w')
+            if config.get('native_method') == 'metalperftrace':
+                run(['metalperftrace', 'setup', '--enable', 'per-frame-metrics', '--pid', str(process.pid)])
+                # A collect right after setup sometimes returns no frames (6 of 18 first windows in the survey).
+                time.sleep(TRACE_SETUP_WAIT_S)
+            state['baseline'] = sample_background(owned=owned) if config.get('cpu_policy') == 'baseline' else None
+            state['cpu_before'] = cpu_snapshot()
+            state['measured_start'] = time.monotonic()
+            state['trace_start'] = time.time()
+            state['logger'] = subprocess.Popen(
+                ['/usr/bin/log', 'stream', '--style', 'ndjson', '--level', 'debug', '--predicate',
+                 f'processIdentifier == {process.pid} AND subsystem == "com.apple.metal.hud"'],
+                stdout=state['log_stream'], stderr=subprocess.STDOUT)
+            logger, log_stream = state['logger'], state['log_stream']
+
+        def end_sample():
+            if process.poll() is not None:
+                raise RuntimeError('app-exited')
+            trace_end = time.time()
+            host_state(check_load=False)
+            background = background_cpu(state['cpu_before'], cpu_snapshot(), owned)
+            elapsed = time.monotonic() - state['measured_start']
+            (out / 'background-cpu.json').write_text(json.dumps({'seconds': background, 'window': elapsed,
+                                                             'baseline_cores': state['baseline']}))
+            if background_changed(background / elapsed, state['baseline'], config.get('max_background_cores', 1.0)):
+                raise RuntimeError('host-not-quiet')
+            frontmost(process.pid)
+            if config.get('capture_windows'):
+                capture_window(process.pid, out / 'qualification-end.png')
+            if config.get('native_method') == 'metalperftrace':
+                collect = json.loads(run(['metalperftrace', 'collect', '--start', '@' + str(state['trace_start']),
+                                          '--end', '@' + str(trace_end), '--json', str(out / 'traces')]))
+                timelines = [json.loads(run(['metalperftrace', 'overview', '--json', '--json-include-timeline',
+                                            '--predicate', 'pid == ' + str(process.pid), path]))
+                             for path in collect['traces']]
+                (out / 'timeline.json').write_text(json.dumps({'pid': process.pid, 'traces': timelines}))
+
+        extra = {}
+        if window['kind'] == 'opening':
+            time.sleep(config.get('warmup_seconds', 15))
+            time.sleep(config.get('native_delay_seconds', 0))
+            begin_sample()
+            time.sleep(window.get('sample_s', config.get('seconds', 60)))
+            end_sample()
+        else:
+            class SampleHooks(consolewin.Hooks):
+                begin = staticmethod(begin_sample)
+                end = staticmethod(end_sample)
+
+                @staticmethod
+                def mid():
+                    if config.get('capture_windows'):
+                        capture_window(process.pid, out / 'qualification-mid.png')
+            console = consolewin.Console.attach(connection, console_text)
+            outcome = consolewin.run_window(window, console, SampleHooks, prints=target.get('console_prints', target['id'] != 'corece'))
+            (out / 'window.json').write_text(json.dumps(outcome, indent=2))
+            (out / 'console.txt').write_text(console.buf)
+            extra = {'window_kind': window['kind'], 'fingerprint': outcome, 'reference_shot': window.get('reference_shot', '')}
+        return {'thermal': state['before']['state'] + ' → ' + thermal()['state'], 'drawable': drawable.replace('x', '×'),
+                **extra,
                 **qualification(target, scenario, config.get('display_hz', 60),
                                 config.get('frame_mode', 'capped'), config.get('native_delay_seconds', 0),
                                 config.get('quality_preset', 'defaults'), config.get('warmup_seconds', 15))}

@@ -317,6 +317,7 @@ def refresh(config, summary_path, page_path):
     bind_routed_visr(config)
     validate_config(config)
     window_keys = windows.resolve(config)
+    window_table = windows.load()
     start = time.monotonic()
     out = Path(config['output']).resolve() / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     out.mkdir(parents=True)
@@ -388,6 +389,11 @@ def refresh(config, summary_path, page_path):
                 for scenario in window_keys:
                     if record['status'] == 'unavailable':
                         break
+                    win = window_table.get(scenario)
+                    if win and win['kind'] != 'opening' and not adapters.has_console(target):
+                        record.setdefault('window_status', {})[scenario] = {
+                            'status': 'not_measured', 'reason': 'no unattended console'}
+                        continue
                     folder = out / f'{target["id"]}-{scenario}-{round_index + 1}'
                     folder.mkdir()
                     print(f'Round {round_index + 1}: {target["id"]} {scenario} '
@@ -411,7 +417,7 @@ def refresh(config, summary_path, page_path):
                         measured = metrics(intervals, config.get('display_hz', 60))
                         if config.get('native_method') == 'metalperftrace' and target['id'] != 'opence-web':
                             measured.update(gpu_metrics(parse_metal_trace_gpu(json.loads((folder / 'timeline.json').read_text()))))
-                        if measured['duration_s'] < 58:
+                        if measured['duration_s'] < 58 and (not win or win['kind'] in ('opening', 'battle')):
                             raise RuntimeError('short-window')
                         if not run_record.pop('scene_verified'):
                             raise RuntimeError('scene-unverified')
@@ -435,7 +441,7 @@ def refresh(config, summary_path, page_path):
                                        'error': str(error)})
             (out / 'errors.json').write_text(json.dumps(errors, indent=2))
         for record in summary['records']:
-            if len(record['runs']) == 3 * len(window_keys):
+            if record['runs'] and len(record['runs']) == 3 * (len(window_keys) - len(record.get('window_status', {}))):
                 record['status'] = 'ok'
                 record['reason'] = ''
             elif record['runs']:
