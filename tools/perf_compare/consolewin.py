@@ -132,9 +132,10 @@ def run_battle(window, console, hooks, clock, lead_in=10.0):
     clock.sleep(half)
     hooks.mid()
     clock.sleep(max(0.0, window['sample_s'] - (clock.now() - started)))
-    hooks.end()
     seconds = clock.now() - started
+    # Read the end counts before the trace is collected (which takes tens of seconds), so they match the window.
     end_reads = _read_all(console, window['fingerprints'] + ['(game_time)'], clock)
+    hooks.end()
     return {'kind': 'battle', 'seconds': seconds, 'start': start_reads, 'end': end_reads, 'ended': 'time'}
 
 
@@ -167,11 +168,11 @@ def run_cutscene(window, console, hooks, clock, prints=True, lead_in=20.0):
     seconds = clock.now() - started
     if not shot_done:
         hooks.mid()
+    end_tick = number(console.query('(game_time)', clock, timeout=1.0))
     hooks.end()
     if not prints and ended == 'timeout' and start_tick is None:
         # Nothing readable from this console: the window is the expected length on the wall clock.
         ended = 'wall-clock'
-    end_tick = number(console.query('(game_time)', clock, timeout=1.0))
     return {'kind': 'cutscene', 'seconds': seconds, 'ended': ended, 'expected_ticks': expected,
             'start_tick': start_tick, 'end_tick': end_tick, 'start': {}, 'end': {}}
 
