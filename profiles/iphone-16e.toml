@@ -29,6 +29,9 @@ dynamic_resolution_floor = 1080
 [variable.display]
 dynamic_resolution_floor = 540
 
+[network]
+player_capacity = 32
+
 [evidence."display.anisotropic_filtering"]
 basis = "measured"
 why = "The quick suite recorded 16x at native 2532x1170 in the menu, a10 opening, and b30 beach runs. The report listed 59.97, 59.96, and 59.91 fps at 60 Hz with nominal thermal state; `stalls.count` reported zero frame-interval stalls over 50 ms. This is a measured baseline, not a comparison of filter settings."
@@ -68,3 +71,8 @@ source = "profiles/README.md, Dynamic resolution in both workloads; VISR present
 basis = "assumed"
 why = "Blood Gulch with 32 players on the 17 Pro at native needed only 1117 lines to remove every late frame, but heavier maps and 64 players need the wider window the variable workload allows."
 source = "VISR presented benchmark runs on the iPhone 17 Pro, main c6f138a78, 2026-10-26"
+
+[evidence."network.player_capacity"]
+basis = "assumed"
+why = "Steve's decision on 2026-10-27 to match the iPhone 17 Pro's 32: the same A17 Pro/A18 class of GPU, not measured separately on this model. The 17 Pro held Sidewinder with 128 players at 30 frames a second, minimum settings and 540 lines, and 32 is half of Blood Gulch's failing 64 there."
+source = "iphone-17-pro.toml network.player_capacity evidence; Steve, 2026-10-27"

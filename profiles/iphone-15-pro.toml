@@ -30,6 +30,9 @@ dynamic_resolution_floor = 1080
 [variable.display]
 dynamic_resolution_floor = 540
 
+[network]
+player_capacity = 32
+
 [evidence."display.frame_rate"]
 basis = "measured"
 why = "Keep 60: UYY37PNG's 20 native-resolution campaign windows, including 1.5x and 2x enemies, delivered 99.666% to 100% of actual presentation intervals within the 60 fps budget at 0.1 ms precision, with nominal thermal state throughout. The slowest window averaged 59.84 fps, with presentation median/p90/p99 16.670/16.670/16.670 ms and maximum 66.682 ms (three intervals over 25 ms). XPBNZMAZ's complete a10 window averaged 59.88 fps with 99.833% on time. LYY9JBRZ at native 120 Hz fails the higher tier even before heating: a10 1.5x averaged 102.60 fps, presentation p90 16.670 ms against an 8.3 ms budget, only 83.220% on time. No measured lower-cost configuration establishes 120 fps with 1.5x enemies."
@@ -69,3 +72,8 @@ source = "profiles/README.md, Dynamic resolution in both workloads; VISR present
 basis = "assumed"
 why = "Blood Gulch with 32 players on the 17 Pro at native needed only 1117 lines to remove every late frame, but heavier maps and 64 players need the wider window the variable workload allows."
 source = "VISR presented benchmark runs on the iPhone 17 Pro, main c6f138a78, 2026-10-26"
+
+[evidence."network.player_capacity"]
+basis = "assumed"
+why = "Steve's decision on 2026-10-27 to match the iPhone 17 Pro's 32: the same A17 Pro/A18 class of GPU, not measured separately on this model. The 17 Pro held Sidewinder with 128 players at 30 frames a second, minimum settings and 540 lines, and 32 is half of Blood Gulch's failing 64 there."
+source = "iphone-17-pro.toml network.player_capacity evidence; Steve, 2026-10-27"

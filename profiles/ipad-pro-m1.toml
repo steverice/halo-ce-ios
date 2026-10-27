@@ -1,6 +1,7 @@
 schema = 1
 name = "iPad Pro 12.9-inch (M1)"
 kind = "model"
+status = "provisional"
 
 [match]
 platform = "ios"
@@ -8,7 +9,7 @@ models = ["iPad13,8", "iPad13,9", "iPad13,10", "iPad13,11"]
 and_newer = true
 
 [display]
-frame_rate = "60"
+frame_rate = "120"
 render_height = 1080
 anisotropic_filtering = 16
 shadow_map_size = 512
@@ -41,8 +42,8 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 
 [evidence."display.frame_rate"]
 basis = "measured"
-why = "120 frames a second does not hold at 900 or 1080 lines at maximum quality: at 1080 lines 79.3% (a10) and 75.7% (d40) of frames were within 8.3 ms, at 900 lines 86.6% and 83.3% (11 rounds each). At 60, 1080 lines held 99.93% and 100% at 1x, 99.70 to 100% at 1.5x and 99.78 to 99.98% at 2x enemies; the presented d40 run at 60 showed every one of 4,558 frames on time. Tier 4 of the ladder (60, 1080, 1.5x). Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
-source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+why = "Steve 2026-10-27: 120 now, to be confirmed by the tier-ladder check at 1.5x. With MetalFX spatial scaling from 1080 lines to the 3180x2384 panel, presented runs at 120 frames a second were 99.90% on time on a10 and 99.75% on d40 (the device at thermal state 2). Earlier offscreen rounds without the scaler path held only 79.3% (a10) and 75.7% (d40) within 8.3 ms at 1080 lines, so 120 at 1.5x enemies is not yet shown."
+source = "Providence a10-heroic and d40-maw-fight presented runs, build d290f06fe (20261026.002743), 2026-10-26; Steve, 2026-10-27"
 
 [evidence."network.player_capacity"]
 basis = "measured"
