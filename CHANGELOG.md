@@ -2,16 +2,11 @@
 
 ### Summary
 
-- Campaign now targets 120 frames per second on Pro iPhones (15 Pro, 16 Pro, 17 Pro) and on the iPhone 17 and iPhone Air. Multiplayer, co-op, and enemy-multiplier games stay at 60. Tell us how it feels.
-- M1 and newer M-series iPads also target 120 frames per second in campaign. Check play at higher enemy multipliers.
-- The iPhone 15 Pro and iPhone 16e now support 32-player games.
-- The benchmark recordings download now has more time to finish on slow connections. The Benchmark menu shows "Downloading benchmark recordings…" with a percentage instead of "unavailable" while it retries.
-- The benchmark catalog offers 20 gameplay recordings across maps a10, a50, b30, b40, c20, c40, and d40, including 1.5x and 2x enemy variants. Run a few and let us know how they replay.
-- The loading bar now fills at a steadier pace. It no longer races ahead at the start and stalls later, and the time estimate settles in gradually.
-- The loading screen's tone now keeps playing until the level's first frame, instead of fading out just before the level appears.
-- Benchmark results page: each build name now links to its release page.
+- The loading bar now moves at an even pace through the whole wait, so the loading screen's chant builds up from its opening instead of skipping ahead.
+- The loading screen's tone keeps sounding until the level appears, instead of dropping out just before it.
+- Benchmark recordings now get several minutes to download instead of 30 seconds, and the Benchmark menu shows "Downloading benchmark recordings…" with a percentage while they download. Slower connections should no longer show "Benchmark recordings are unavailable".
 
-iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
+iCloud Saves starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
 
 VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
 
