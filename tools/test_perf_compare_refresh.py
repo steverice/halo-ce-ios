@@ -443,3 +443,22 @@ def test_validate_config_accepts_window_keys_and_rejects_unknown_ones():
                 {'windows': ['a50-hangar'], 'native_delay_seconds': 90}):
         with pytest.raises(ValueError):
             m.validate_config(bad)
+
+
+def test_native_display_by_drawable_and_port():
+    m = engine()
+    small = m.adapters.native_display('visr')
+    assert small == m.adapters.native_display('visr', drawable='1280x960')
+    assert 'window_scale = 1' in small and 'window_size = "640x480"' in small
+    visr = m.adapters.native_display('visr', drawable='2560x1920')
+    assert 'window_scale = 2' in visr and 'window_size' not in visr and 'screen_height = 480' in visr
+    for port in ('opence-macos', 'corece'):
+        other = m.adapters.native_display(port, drawable='2560x1920')
+        assert 'window_size = "1280x960"' in other and 'window_scale = 1' in other and 'screen_height = 960' in other
+    assert m.adapters.drawable_window('2560x1920') == (1280, 960)
+    for bad in ('1920x1080', '', None):
+        with pytest.raises(ValueError):
+            m.adapters.native_display('visr', drawable=bad)
+    m.validate_config({'drawable': '2560x1920'})
+    with pytest.raises(ValueError):
+        m.validate_config({'drawable': '640x480'})

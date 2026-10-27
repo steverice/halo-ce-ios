@@ -205,6 +205,7 @@ def validate_config(config):
             target.get('unavailable_reason') != 'safari-remote-automation-disabled'
             for target in config.get('targets', [])):
         raise ValueError('baseline CPU policy requires Safari targets to be skipped')
+    adapters.drawable_window(config.get('drawable', '1280x960'))
     if config.get('display_hz', 60) <= 0:
         raise ValueError('display rate must be positive')
 
@@ -345,6 +346,8 @@ def refresh(config, summary_path, page_path):
             record['scenarios'] = window_keys
             record['quality_preset'] = config.get('quality_preset', 'defaults')
             record['warmup_seconds'] = config.get('warmup_seconds', 15)
+            if target['id'] != 'opence-web':
+                record['drawable'] = config.get('drawable', '1280x960').replace('x', '×')
             records[target['id']] = record
             if target.get('unavailable_reason') == 'safari-remote-automation-disabled':
                 record['reason'] = target['unavailable_reason']
@@ -394,7 +397,7 @@ def refresh(config, summary_path, page_path):
                         (folder / 'host-before.json').write_text(json.dumps(before))
                         adapter = adapters.safari if target['id'] == 'opence-web' else adapters.native
                         run_record = adapter(target, scenario, folder, config)
-                        if target['id'] != 'opence-web' and run_record.get('scene_verified') and run_record['resolution'] != '1280×960':
+                        if target['id'] != 'opence-web' and run_record.get('scene_verified') and run_record['resolution'] != config.get('drawable', '1280x960').replace('x', '×'):
                             raise RuntimeError('resolution-mismatch')
                         if target['id'] == 'opence-web':
                             intervals = parse_raf(json.loads((folder / 'raf.json').read_text())['timestamps'])

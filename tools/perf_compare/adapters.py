@@ -171,10 +171,30 @@ def native(target, scenario, out, config):
             return result
 
 
-def native_display(target_id, frame_mode='capped', quality_preset='defaults'):
+# Drawable size in pixels -> window size in points. The Macs run the window at 2x, so the drawable is twice the window.
+TRACE_SETUP_WAIT_S = 3
+DRAWABLES = {'1280x960': (640, 480), '2560x1920': (1280, 960)}
+
+
+def drawable_window(drawable):
+    if drawable not in DRAWABLES:
+        raise ValueError('unknown drawable ' + str(drawable))
+    return DRAWABLES[drawable]
+
+
+def native_display(target_id, frame_mode='capped', quality_preset='defaults', drawable='1280x960'):
+    width, height = drawable_window(drawable)
     display = ('renderer = "metal"\n' if target_id == 'visr' else '')
-    display += ('fullscreen = false\nscreen_width = 0\nscreen_height = 480\nrender_height = 0\n'
-                'window_scale = 1\nwindow_size = "640x480"\ninterpolation = true\n')
+    if width == 640:
+        display += ('fullscreen = false\nscreen_width = 0\nscreen_height = 480\nrender_height = 0\n'
+                    'window_scale = 1\nwindow_size = "640x480"\ninterpolation = true\n')
+    elif target_id == 'visr':
+        # VISR's window_size key is desktop-only; the Mac app sizes its window as 640x480 points times window_scale.
+        display += ('fullscreen = false\nscreen_width = 0\nscreen_height = 480\nrender_height = 0\n'
+                    f'window_scale = {width // 640}\ninterpolation = true\n')
+    else:
+        display += ('fullscreen = false\nscreen_width = 0\n' f'screen_height = {height}\nrender_height = 0\n'
+                    f'window_scale = 1\nwindow_size = "{width}x{height}"\ninterpolation = true\n')
     if frame_mode == 'uncapped':
         if target_id == 'visr':
             display += 'frame_rate = "unlimited"\nvsync = false\n'
@@ -236,7 +256,8 @@ def _native(target, scenario, out, config):
     with socket.socket() as port_socket:
         port_socket.bind(('127.0.0.1', 0))
         port = port_socket.getsockname()[1]
-    display = native_display(target['id'], config.get('frame_mode', 'capped'), config.get('quality_preset', 'defaults'))
+    drawable = config.get('drawable', '1280x960')
+    display = native_display(target['id'], config.get('frame_mode', 'capped'), config.get('quality_preset', 'defaults'), drawable)
     text = ('[display]\n' + display + '[audio]\nenabled = false\n[network]\nonline = false\n'
             '[update]\nauto = false\n[community_maps]\nauto_download = false\n'
             '[timer_audio]\nauto_download = false\n[discord]\napplication_id = \"\"\n'
@@ -246,7 +267,7 @@ def _native(target, scenario, out, config):
     level = level_map if target['id'] == 'visr' else 'levels\\' + level_map + '\\' + level_map
     (data / 'init.txt').write_text('game_difficulty_set normal\nmap_name ' + level + '\n')
     env = {**os.environ, 'HALO_DATA_ROOT': str(data), 'HALO_SAVE_ROOT': str(saves),
-           'HALO_HOST_DISPLAY': '640x480@2', 'HALO_RUNNER': '1', 'MTL_HUD_ENABLED': '1',
+           'HALO_HOST_DISPLAY': '%dx%d@2' % drawable_window(drawable), 'HALO_RUNNER': '1', 'MTL_HUD_ENABLED': '1',
            'MTL_HUD_LOG_ENABLED': '1'}
     # Execute only the published bundle's declared host. Never read its code.
     stderr = (out / 'app.log').open('w')
@@ -289,6 +310,8 @@ def _native(target, scenario, out, config):
         log_stream = (out / 'hud.log').open('w')
         if config.get('native_method') == 'metalperftrace':
             run(['metalperftrace', 'setup', '--enable', 'per-frame-metrics', '--pid', str(process.pid)])
+            # A collect right after setup sometimes returns no frames (6 of 18 first windows in the survey).
+            time.sleep(TRACE_SETUP_WAIT_S)
         baseline = sample_background(owned={process.pid}) if config.get('cpu_policy') == 'baseline' else None
         cpu_before = cpu_snapshot()
         measured_start = time.monotonic()
@@ -317,7 +340,7 @@ def _native(target, scenario, out, config):
                                         '--predicate', 'pid == ' + str(process.pid), path]))
                          for path in collect['traces']]
             (out / 'timeline.json').write_text(json.dumps({'pid': process.pid, 'traces': timelines}))
-        return {'thermal': before['state'] + ' → ' + thermal()['state'],
+        return {'thermal': before['state'] + ' → ' + thermal()['state'], 'drawable': drawable.replace('x', '×'),
                 **qualification(target, scenario, config.get('display_hz', 60),
                                 config.get('frame_mode', 'capped'), config.get('native_delay_seconds', 0),
                                 config.get('quality_preset', 'defaults'), config.get('warmup_seconds', 15))}
