@@ -253,7 +253,11 @@ def _native(target, scenario, out, config):
     else:
         data = out / 'data'
         data.mkdir()
-        (data / 'maps').symlink_to(maps, target_is_directory=True)
+        if target['id'] == 'halo-og':
+            # Its launch probe ran against a real maps folder (an APFS clone), not a symlink.
+            subprocess.run(['cp', '-c', '-R', str(maps), str(data / 'maps')], check=True)
+        else:
+            (data / 'maps').symlink_to(maps, target_is_directory=True)
         saves = data / 'saves'
     if not all((maps / name).is_file() for name in ('ui.map', level_map + '.map')):
         raise FileNotFoundError('maps')
@@ -296,7 +300,7 @@ def _native(target, scenario, out, config):
                     'HALO_DISPLAY_MODE': 'windowed', 'HALO_WINDOW_SCALE': '1', 'HALO_UPDATE_AUTO': '0'})
     # Execute only the published bundle's declared host. Never read its code.
     stderr = (out / 'app.log').open('w')
-    process = subprocess.Popen([str(binary), *target.get('args', [])], cwd=app.parent, env=env,
+    process = subprocess.Popen([str(binary), *target.get('args', [])], cwd=(out if target['id'] in ENV_CONSOLE_PORTS else app.parent), env=env,
                                stdout=stderr, stderr=stderr)
     connection = None
     logger = None
