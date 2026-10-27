@@ -3720,7 +3720,7 @@ hosts' listings, p2p_lobby.c). Joining one joins its invite (as Direct
 Link's PASTE LINK); once its host is reached its game is among the client's,
 and an A press (posted) joins it, or shows its lobby if under way */
 
-#define LOBBY_BROWSER_GAMES 256
+#define LOBBY_BROWSER_GAMES 896
 /* milliseconds: a host not reached in this long is given up (p2p's own
 wait is longer) */
 #define LOBBY_BROWSER_JOIN_TIMEOUT 30000
@@ -3960,6 +3960,11 @@ static void lobby_browser_update(struct widget_instance *list)
 			usnprintf(text, ROW_TEXT_LENGTH - 1, L"V%d", game->network_version);
 			text_set(named(row, "server_item_ping", 0), text);
 		}
+		else if (game->from_master)
+		{
+			text_to_wide(game->region[0] ? game->region : "-", text, ROW_TEXT_LENGTH);
+			text_set(named(row, "server_item_ping", 0), text);
+		}
 		else
 		{
 			text_set(named(row, "server_item_ping", 0), game->failed ? L"FAILED" : !game->open ? L"CLOSED" :
@@ -4092,7 +4097,17 @@ static void lobby_browser_update(struct widget_instance *list)
 			text[0] = 0;
 		text[NUMBEROF(text) - 1] = 0;
 		text_set(named(list, "ticker_player_info", 0), text);
-		text_set(named(list, "ticker_rules_info", 0), L"");
+		if (chosen < lobby_browser.count && lobby_browser.games[chosen].from_master)
+		{
+			wchar_t region[32];
+
+			text_to_wide(lobby_browser.games[chosen].region, region, NUMBEROF(region));
+			usnprintf(text, NUMBEROF(text) - 1, L"Master-listed%s%s", region[0] ? L": " : L"", region);
+			text[NUMBEROF(text) - 1] = 0;
+			text_set(named(list, "ticker_rules_info", 0), text);
+		}
+		else
+			text_set(named(list, "ticker_rules_info", 0), L"");
 	}
 	if (stats)
 	{

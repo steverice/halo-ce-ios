@@ -94,6 +94,8 @@ enum
 	MAXIMUM_QUEUED = 64,
 	/* Delta's list's games shown (p2p_lobby_delta_games) */
 	MAXIMUM_DELTA_GAMES = 128,
+	MAXIMUM_MASTER_GAMES = 512,
+	MASTER_EXPIRY = 300000,
 
 	/* milliseconds */
 	REPUBLISH_INTERVAL = 30000,
@@ -212,6 +214,10 @@ static struct
 	struct p2p_listing delta_games[MAXIMUM_DELTA_GAMES];
 	int delta_count;
 	unsigned long delta_time;
+	/* Verified master snapshot; a successful 304 refreshes its lifetime too. */
+	struct p2p_listing master_games[MAXIMUM_MASTER_GAMES];
+	int master_count;
+	unsigned long master_time;
 	/* the identifiers of games joining failed */
 	unsigned char failed[MAXIMUM_GAMES][P2P_IDENTIFIER_SIZE];
 	int failed_count;
@@ -715,14 +721,103 @@ void p2p_lobby_slot_heard(const char *hash_text, const unsigned char *payload, i
 	queued->retained = retained;
 }
 
+/* Broker and master rows use the same invite and compatibility metadata. */
+static void listing_show(const struct listing *listing, const unsigned char *key_hash, struct p2p_listing *shown)
+{
+	unsigned char bytes[P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE];
+	char text[2 * (P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE) + 1];
+
+	memset(shown, 0, sizeof(*shown));
+	memcpy(shown->key_hash, key_hash, P2P_KEY_HASH_SIZE);
+	shown->locked = (listing->flags & _listing_password) != 0;
+	if (shown->locked)
+	{
+		/* (its invite once the password opens its token: p2p_listing_unlock) */
+		shown->invite[0] = 0;
+		memcpy(shown->signing_key, listing->key, P2P_KEY_SIZE);
+		memcpy(shown->sealed_token, listing->sealed_token, P2P_SEALED_TOKEN_SIZE);
+	}
+	else
+	{
+		memcpy(bytes, key_hash, P2P_KEY_HASH_SIZE);
+		memcpy(bytes + P2P_KEY_HASH_SIZE, listing->token, P2P_TOKEN_SIZE);
+		p2p_hex(bytes, sizeof(bytes), text);
+		snprintf(shown->invite, sizeof(shown->invite), "halo://join/%s", text);
+	}
+	p2p_identifier_from_hash(key_hash, shown->identifier);
+	memcpy(shown->name, listing->name, sizeof(shown->name));
+	memcpy(shown->map, listing->map, sizeof(shown->map));
+	memcpy(shown->gametype, listing->gametype, sizeof(shown->gametype));
+	shown->player_count = (unsigned char)listing->player_count;
+	shown->maximum_player_count = (unsigned char)listing->maximum_player_count;
+	shown->engine_type = (unsigned char)listing->engine_type;
+	shown->kind = (unsigned char)listing->kind;
+	/* Third-party flag 0x80 makes the dedicated bit ambiguous (Delta). */
+	shown->dedicated = halo_network_version_has_dedicated((unsigned)listing->version) && (listing->flags & 0xa0) == 0x20;
+	shown->open = (listing->flags & _listing_open) != 0;
+	shown->in_progress = (listing->flags & _listing_in_progress) != 0;
+	shown->has_teams = (listing->flags & _listing_has_teams) != 0;
+	shown->ping = -1;
+	shown->network_version = (short)listing->version;
+	shown->joinable = halo_network_kind_reason(shown->kind) == NULL;
+	shown->from_delta = 0;
+	shown->map_family = P2P_MAP_FAMILY_XBOX;
+}
+
+/* Read text again after signature verification: controls are removed rather
+than replaced, including embedded NUL bytes in the length-prefixed strings. */
+static void master_text(const unsigned char *bytes, int *offset, char *text)
+{
+	int length = bytes[(*offset)++], index, written = 0;
+
+	for (index = 0; index < length; index++)
+	{
+		unsigned char character = bytes[(*offset)++];
+
+		if (character >= 0x20 && character != 0x7f)
+			text[written++] = character < 0x7f ? (char)character : '?';
+	}
+	text[written] = 0;
+}
+
+int p2p_lobby_master_read(const unsigned char *bytes, int size, struct p2p_listing *shown)
+{
+	struct listing listing;
+	unsigned char key_hash[P2P_KEY_HASH_SIZE];
+	int offset;
+
+	if (!bytes || !shown || !listing_read(bytes, size, &listing) ||
+		(listing.flags & _listing_closed) ||
+		!halo_network_version_joinable(HALO_PORT_NETWORK_VERSION, (unsigned)listing.version) ||
+		!listing_signed(bytes, &listing) || !signing_key_hash(listing.key, key_hash))
+	{
+		return 0;
+	}
+	listing_show(&listing, key_hash, shown);
+	shown->from_master = 1;
+	offset = 14 + P2P_KEY_SIZE + ((listing.flags & _listing_password) ? P2P_SEALED_TOKEN_SIZE : P2P_TOKEN_SIZE) + 3;
+	master_text(bytes, &offset, shown->name);
+	master_text(bytes, &offset, shown->map);
+	master_text(bytes, &offset, shown->gametype);
+	return 1;
+}
+
+void p2p_lobby_master_games(const struct p2p_listing *games, int count)
+{
+	lobby.master_count = 0;
+	if (!lobby.browsing || !games || count <= 0)
+		return;
+	count = count > MAXIMUM_MASTER_GAMES ? MAXIMUM_MASTER_GAMES : count;
+	memcpy(lobby.master_games, games, sizeof(*games) * (size_t)count);
+	lobby.master_count = count;
+	lobby.master_time = p2p_now();
+}
+
 /* a queued listing, its signature checked: taken or not */
 static void listing_take(const struct queued *queued, const struct listing *listing)
 {
 	struct tombstone *tombstone = find_tombstone(queued->key_hash);
 	struct game *game = find_game(queued->key_hash);
-	struct p2p_listing *shown;
-	unsigned char bytes[P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE];
-	char text[2 * (P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE) + 1];
 	int index;
 
 	if (tombstone && listing->sequence <= tombstone->sequence)
@@ -768,41 +863,7 @@ static void listing_take(const struct queued *queued, const struct listing *list
 	game->heard_time = p2p_now();
 	memcpy(game->payload, queued->payload, (size_t)queued->size);
 	game->payload_size = queued->size;
-	shown = &game->listing;
-	shown->locked = (listing->flags & _listing_password) != 0;
-	if (shown->locked)
-	{
-		/* (its invite once the password opens its token: p2p_listing_unlock) */
-		shown->invite[0] = 0;
-		memcpy(shown->key_hash, queued->key_hash, P2P_KEY_HASH_SIZE);
-		memcpy(shown->signing_key, listing->key, P2P_KEY_SIZE);
-		memcpy(shown->sealed_token, listing->sealed_token, P2P_SEALED_TOKEN_SIZE);
-	}
-	else
-	{
-		memcpy(bytes, queued->key_hash, P2P_KEY_HASH_SIZE);
-		memcpy(bytes + P2P_KEY_HASH_SIZE, listing->token, P2P_TOKEN_SIZE);
-		p2p_hex(bytes, sizeof(bytes), text);
-		snprintf(shown->invite, sizeof(shown->invite), "halo://join/%s", text);
-	}
-	p2p_identifier_from_hash(queued->key_hash, shown->identifier);
-	memcpy(shown->name, listing->name, sizeof(shown->name));
-	memcpy(shown->map, listing->map, sizeof(shown->map));
-	memcpy(shown->gametype, listing->gametype, sizeof(shown->gametype));
-	shown->player_count = (unsigned char)listing->player_count;
-	shown->maximum_player_count = (unsigned char)listing->maximum_player_count;
-	shown->engine_type = (unsigned char)listing->engine_type;
-	shown->kind = (unsigned char)listing->kind;
-	/* Third-party flag 0x80 makes the dedicated bit ambiguous (Delta). */
-	shown->dedicated = halo_network_version_has_dedicated((unsigned)listing->version) && (listing->flags & 0xa0) == 0x20;
-	shown->open = (listing->flags & _listing_open) != 0;
-	shown->in_progress = (listing->flags & _listing_in_progress) != 0;
-	shown->has_teams = (listing->flags & _listing_has_teams) != 0;
-	shown->ping = -1;
-	shown->network_version = (short)listing->version;
-	shown->joinable = halo_network_kind_reason(shown->kind) == NULL;
-	shown->from_delta = 0;
-	shown->map_family = P2P_MAP_FAMILY_XBOX;
+	listing_show(listing, queued->key_hash, &game->listing);
 }
 
 /* A retained slot may outlive its host; a live slot can also be republished
@@ -1016,10 +1077,12 @@ void p2p_lobby_browse(int on)
 			memset(lobby.others, 0, sizeof(lobby.others));
 			lobby.queue_count = 0;
 			lobby.delta_count = 0;
+			lobby.master_count = 0;
 		}
 		lobby.query_wanted = on;
 		p2p_signal_lobby_topics(lobby.listed, on);
 		p2p_delta_browse(on);
+		p2p_master_browse(on);
 	}
 	pthread_mutex_unlock(&p2p_lock);
 }
@@ -1031,6 +1094,7 @@ void p2p_lobby_refresh(void)
 	{
 		lobby.query_wanted = 1;
 		p2p_delta_refresh();
+		p2p_master_refresh();
 	}
 	pthread_mutex_unlock(&p2p_lock);
 }
@@ -1064,9 +1128,33 @@ int p2p_lobby_games(struct p2p_listing *games, int maximum_count)
 	int index, delta;
 
 	pthread_mutex_lock(&p2p_lock);
+	if (lobby.master_count && elapsed(lobby.master_time, MASTER_EXPIRY))
+		lobby.master_count = 0;
+	for (index = 0; index < lobby.master_count && count < maximum_count; index++)
+	{
+		int shown;
+
+		for (shown = 0; shown < count && memcmp(games[shown].key_hash, lobby.master_games[index].key_hash,
+			P2P_KEY_HASH_SIZE); shown++)
+		{
+		}
+		if (shown < count)
+			continue;
+		games[count] = lobby.master_games[index];
+		games[count].failed = (unsigned char)identifier_failed(games[count].identifier);
+		count++;
+	}
 	for (index = 0; index < MAXIMUM_GAMES && count < maximum_count; index++)
 	{
+		int shown;
+
 		if (!lobby.games[index].used)
+			continue;
+		for (shown = 0; shown < count && memcmp(games[shown].key_hash, lobby.games[index].key_hash,
+			P2P_KEY_HASH_SIZE); shown++)
+		{
+		}
+		if (shown < count)
 			continue;
 		games[count] = lobby.games[index].listing;
 		games[count].failed = (unsigned char)identifier_failed(games[count].identifier);
@@ -1080,8 +1168,8 @@ int p2p_lobby_games(struct p2p_listing *games, int maximum_count)
 	{
 		int shown;
 
-		for (shown = 0; shown < count && memcmp(games[shown].identifier, lobby.delta_games[delta].identifier,
-			P2P_IDENTIFIER_SIZE); shown++)
+		for (shown = 0; shown < count && memcmp(games[shown].key_hash, lobby.delta_games[delta].key_hash,
+			P2P_KEY_HASH_SIZE); shown++)
 		{
 		}
 		if (shown < count)
@@ -1148,6 +1236,7 @@ void p2p_lobby_delta_games(const struct delta_game *games, int count)
 		}
 		if (digit < lobby.delta_count)
 			continue;
+		memcpy(shown->key_hash, hash, P2P_KEY_HASH_SIZE);
 		snprintf(shown->invite, sizeof(shown->invite), "halo://join/%s", game->invite);
 		p2p_identifier_from_hash(hash, shown->identifier);
 		sanitize(shown->name, P2P_LISTING_NAME_SIZE, game->name, P2P_LISTING_NAME_SIZE);

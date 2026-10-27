@@ -160,10 +160,22 @@ done:
 
 /* ---------- the Delta list's requests (posix.h) */
 
-int posix_https_request(const char *url, const char *form, int form_size, char *response, int response_size,
-	int timeout_milliseconds, char *error, int error_size)
+/* Missing headers are empty; an oversized or unconvertible value fails rather
+than letting a truncated signature or cache validator reach the caller. */
+static int signed_header(HINTERNET request, const wchar_t *name, char *value, int size)
 {
-	wchar_t wide_url[2048], host[256], url_path[2048];
+	wchar_t wide[512];
+	DWORD bytes = sizeof(wide);
+
+	if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_CUSTOM, name, wide, &bytes, WINHTTP_NO_HEADER_INDEX))
+		return GetLastError() == ERROR_WINHTTP_HEADER_NOT_FOUND;
+	return WideCharToMultiByte(CP_UTF8, 0, wide, -1, value, size, NULL, NULL) > 0;
+}
+
+static int https_request(const char *url, const char *form, int form_size, const char *etag, char *response,
+	int response_size, int timeout_milliseconds, struct posix_https_headers *headers, char *error, int error_size)
+{
+	wchar_t wide_url[2048], host[256], url_path[2048], conditional[160];
 	URL_COMPONENTS components;
 	HINTERNET session = NULL, connection = NULL, request = NULL;
 	DWORD status = 0, status_size = sizeof(status);
@@ -171,11 +183,14 @@ int posix_https_request(const char *url, const char *form, int form_size, char *
 	int timeout = timeout_milliseconds > 0 ? timeout_milliseconds : TIMEOUT_MILLISECONDS;
 	int received = 0, succeeded = 0;
 
-	if (response_size > 0)
+	if (headers)
+		memset(headers, 0, sizeof(*headers));
+	if (response && response_size > 0)
 		response[0] = 0;
-	if (error_size > 0)
+	if (error && error_size > 0)
 		error[0] = 0;
-	if (!url || response_size < 2 || error_size < 2 || (form && form_size < 0) ||
+	if (!url || !response || !error || response_size < 2 || error_size < 2 || (form && form_size < 0) ||
+		(etag && (strlen(etag) >= 128 || strpbrk(etag, "\r\n"))) ||
 		!wide_from_utf8(url, wide_url, 2048))
 	{
 		return 0;
@@ -211,8 +226,28 @@ int posix_https_request(const char *url, const char *form, int form_size, char *
 		request = WinHttpOpenRequest(connection, form ? L"POST" : L"GET", url_path, NULL, WINHTTP_NO_REFERER,
 			WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
 	}
-	if (request)
-		WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy));
+	if (!request || !WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy)))
+	{
+		set_error(error, error_size, "could not disable redirects");
+		goto done;
+	}
+	if (headers && !WinHttpAddRequestHeaders(request, L"Accept-Encoding: identity", (DWORD)-1L,
+		WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE))
+	{
+		set_error(error, error_size, "could not set content encoding");
+		goto done;
+	}
+	if (etag && *etag)
+	{
+		wcscpy(conditional, L"If-None-Match: ");
+		if (!wide_from_utf8(etag, conditional + 15, 145) ||
+			!WinHttpAddRequestHeaders(request, conditional, (DWORD)-1L,
+				WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE))
+		{
+			set_error(error, error_size, "could not set cache validator");
+			goto done;
+		}
+	}
 	if (!request || !WinHttpSendRequest(request,
 		form ? L"Content-Type: application/x-www-form-urlencoded" : WINHTTP_NO_ADDITIONAL_HEADERS,
 		form ? (DWORD)-1L : 0, form ? (LPVOID)form : WINHTTP_NO_REQUEST_DATA, form ? (DWORD)form_size : 0,
@@ -226,6 +261,25 @@ int posix_https_request(const char *url, const char *form, int form_size, char *
 	{
 		set_error(error, error_size, "a broken answer");
 		goto done;
+	}
+	if (headers)
+	{
+		char encoding[128] = "";
+
+		if (!signed_header(request, L"Signature", headers->signature, sizeof(headers->signature)) ||
+			!signed_header(request, L"Signature-Key", headers->signature_key, sizeof(headers->signature_key)) ||
+			!signed_header(request, L"ETag", headers->etag, sizeof(headers->etag)) ||
+			!signed_header(request, L"Retry-After", headers->retry_after, sizeof(headers->retry_after)) ||
+			!signed_header(request, L"Content-Encoding", encoding, sizeof(encoding)))
+		{
+			snprintf(error, (size_t)error_size, "oversized or invalid response header");
+			goto done;
+		}
+		if (*encoding && _stricmp(encoding, "identity"))
+		{
+			snprintf(error, (size_t)error_size, "unsupported content encoding");
+			goto done;
+		}
 	}
 	if (status == 200)
 	{
@@ -258,9 +312,12 @@ int posix_https_request(const char *url, const char *form, int form_size, char *
 		}
 		response[received] = 0;
 	}
+	if (headers)
+		headers->body_size = received;
 	succeeded = 1;
 
 done:
+	if (!succeeded) response[0] = 0;
 	if (request)
 		WinHttpCloseHandle(request);
 	if (connection)
@@ -268,6 +325,22 @@ done:
 	if (session)
 		WinHttpCloseHandle(session);
 	return succeeded ? (int)status : 0;
+}
+
+int posix_https_request(const char *url, const char *form, int form_size, char *response, int response_size,
+	int timeout_milliseconds, char *error, int error_size)
+{
+	return https_request(url, form, form_size, NULL, response, response_size, timeout_milliseconds, NULL,
+		error, error_size);
+}
+
+int posix_https_get_signed(const char *url, const char *etag, char *response, int response_size,
+	int timeout_milliseconds, struct posix_https_headers *headers, char *error, int error_size)
+{
+	if (!headers)
+		return 0;
+	return https_request(url, NULL, 0, etag, response, response_size, timeout_milliseconds, headers,
+		error, error_size);
 }
 
 /* ---------- files and processes */

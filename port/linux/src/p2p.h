@@ -245,6 +245,9 @@ struct p2p_listing
 	signalling brokers */
 	short network_version;
 	unsigned char joinable, from_delta;
+	/* Master provenance and operator region; ping is unknown before joining. */
+	unsigned char from_master;
+	char region[32];
 	/* the family of its map, as Delta's list says (P2P_MAP_FAMILY_*): a
 	broker's listing does not say, and is P2P_MAP_FAMILY_XBOX */
 	unsigned char map_family;

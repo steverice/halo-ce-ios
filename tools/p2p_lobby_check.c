@@ -86,6 +86,8 @@ void p2p_signal_lobby_publish(const unsigned char *listing, int size, int closin
 void p2p_signal_lobby_quit(void) {}
 void p2p_delta_browse(int on) { (void)on; }
 void p2p_delta_refresh(void) {}
+void p2p_master_browse(int on) { (void)on; }
+void p2p_master_refresh(void) {}
 
 /* the p2p thread's calls: under p2p_lock, as there (p2p_lobby_update lets
 go of it while it checks signatures) */

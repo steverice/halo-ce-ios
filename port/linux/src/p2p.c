@@ -3595,6 +3595,7 @@ static void lobby_quit(void)
 	pthread_mutex_unlock(&p2p_lock);
 	/* (Delta's list, if the game was announced there, not under the lock: it waits for the list) */
 	p2p_delta_quit();
+	p2p_master_quit();
 }
 
 /* the game exits: the router forwards the port no longer (after a request
@@ -4106,6 +4107,7 @@ static void *p2p_thread(void *unused)
 			hosted_player_counts(&count, &maximum);
 			p2p_lobby_update(p2p.hosting && p2p.has_token ? p2p.token : NULL, count, maximum);
 			p2p_delta_update();
+			p2p_master_update();
 			if (p2p_lobby_listed())
 			{
 				p2p.token_listed = 1;

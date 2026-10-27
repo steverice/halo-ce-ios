@@ -173,6 +173,22 @@ once */
 int posix_https_request(const char *url, const char *form, int form_size, char *response, int response_size,
 	int timeout_milliseconds, char *error, int error_size);
 
+/* A GET with optional If-None-Match and the headers needed to verify a signed
+body. The status and buffer rules above apply. body_size is the exact number
+of decoded bytes, excluding the trailing zero; verify that many bytes rather
+than strlen(response). Unsupported content encodings fail on desktop builds.
+The headers are reset on entry; oversized header values fail the request. */
+struct posix_https_headers
+{
+	char signature[128];
+	char signature_key[32];
+	char etag[128];
+	char retry_after[128];
+	int body_size;
+};
+int posix_https_get_signed(const char *url, const char *etag, char *response, int response_size,
+	int timeout_milliseconds, struct posix_https_headers *headers, char *error, int error_size);
+
 /* ---------- DTLS for WebRTC (internet play with browsers, p2p_webrtc.c;
 posix_dtls.c, with port/third_party/mbedtls) */
 

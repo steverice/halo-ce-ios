@@ -16,7 +16,7 @@ def test_internet_kind_and_malformed_listings(tmp_path):
                              for name in ("listing", "game", "tombstone", "queued"))
     production = "\n".join(function(source, signature) for signature in (
         "static unsigned long get_long(", "static int get_text(",
-        "static int listing_read(", "static void listing_take("))
+        "static int listing_read(", "static void listing_show(", "static void listing_take("))
     fixture = (ROOT / "port/ios/tests/network_internet_kind_probe.c").read_text()
     program = fixture.replace("/* DECLARATIONS */", declarations).replace("/* PRODUCTION */", production)
     probe, binary = tmp_path / "internet.c", tmp_path / "internet"

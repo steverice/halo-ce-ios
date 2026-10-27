@@ -57,6 +57,33 @@ def transport(native):
 
 
 @pytest.fixture(scope="module")
+def signed_transport(native):
+    """Exercise signed GET metadata and exact body sizes through the shared transport."""
+    work, objects = native
+    source = work / "signed_transport_check.c"
+    source.write_text(r'''#include "posix.h"
+#include <stdio.h>
+#include <stdlib.h>
+int main(int argc, char **argv) {
+    char body[1024], error[256];
+    struct posix_https_headers headers;
+    int index, status = posix_https_get_signed(argv[1], argc > 2 ? argv[2] : NULL,
+        body, argc > 3 ? atoi(argv[3]) : sizeof(body), 1000, &headers, error, sizeof(error));
+    printf("status=%d\nerror=%s\nsignature=%s\nkey=%s\netag=%s\nretry=%s\nsize=%d\nhex=",
+        status, error, headers.signature, headers.signature_key, headers.etag,
+        headers.retry_after, headers.body_size);
+    for (index = 0; index < headers.body_size; index++) printf("%02x", (unsigned char)body[index]);
+    printf("\n");
+    return 0;
+}
+''')
+    program = work / "signed_transport_check"
+    compile_native(["-std=gnu11", "-O1", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Iport/linux/src",
+                    f"-I{MBEDTLS / 'include'}", str(source), "port/linux/src/posix_update.c", *objects], program)
+    return program
+
+
+@pytest.fixture(scope="module")
 def worker(native):
     """tools/delta_worker_check.c with p2p_delta.c, delta_list.c and the request layer, p2p_delta.c compiled
     beside a platform.h that declares only what it takes from the game's"""
@@ -87,9 +114,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *arguments):
         pass
 
-    def respond(self, status, body, chunked=False):
+    def respond(self, status, body, chunked=False, headers=()):
         data = body if isinstance(body, bytes) else body.encode()
         self.send_response(status)
+        for name, value in headers:
+            self.send_header(name, value)
         if chunked:
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
@@ -110,7 +139,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.server.requests.append({"method": self.command, "path": self.path, "body": body,
                                      "agent": self.headers.get("User-Agent"),
                                      "type": self.headers.get("Content-Type")})
-        if self.path == "/v1/games":
+        if self.path.startswith("/signed"):
+            self.server.signed_headers = dict(self.headers)
+            headers = [("Signature", "ed25519=test"), ("Signature-Key", "fe290a97f7ab592b"),
+                       ("ETag", '"test"'), ("Retry-After", "10")]
+            status = 200
+            if self.path == "/signed/oversized":
+                headers[0] = ("Signature", "x" * 128)
+            elif self.path == "/signed/encoded":
+                headers.append(("Content-Encoding", "gzip"))
+            elif self.path == "/signed/duplicate":
+                headers.append(("Signature", "ed25519=other"))
+            elif self.path == "/signed/cached":
+                status = 304
+            elif self.path == "/signed/limited":
+                status = 429
+            self.respond(status, b"ab\0cd" if status == 200 else b"",
+                         chunked=self.path == "/signed/chunked", headers=headers)
+        elif self.path == "/v1/games":
             self.respond(200, json.dumps(LIST))
         elif self.path == "/chunked":
             self.respond(200, json.dumps(LIST), chunked=True)
@@ -248,3 +294,40 @@ def test_the_probe_of_the_list_and_announcing(tmp_path):
                     "port/ios/tests/delta_probe.c", "port/linux/src/delta_list.c"], program)
     result = subprocess.run([str(program)], capture_output=True, text=True, timeout=60)
     assert result.returncode == 0 and "delta probe ok" in result.stdout, result.stderr
+
+
+def signed_request(transport, server, path, *arguments):
+    result = subprocess.run([str(transport), f"http://127.0.0.1:{server.server_address[1]}{path}", *arguments],
+                            capture_output=True, text=True, timeout=30, env=TEST_ENV)
+    assert result.returncode == 0, result.stderr
+    return dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+
+
+@pytest.mark.parametrize("path", ["/signed", "/signed/chunked"])
+def test_signed_get_returns_exact_bytes_and_headers(signed_transport, server, path):
+    fields = signed_request(signed_transport, server, path, '"previous"')
+    assert fields == {"status": "200", "error": "", "signature": "ed25519=test", "key": "fe290a97f7ab592b",
+                      "etag": '"test"', "retry": "10", "size": "5", "hex": "6162006364"}
+    assert server.signed_headers["If-None-Match"] == '"previous"'
+    assert server.signed_headers["Accept-Encoding"] == "identity"
+
+
+@pytest.mark.parametrize("path,status", [("/signed/cached", "304"), ("/signed/limited", "429")])
+def test_signed_get_keeps_metadata_for_other_statuses(signed_transport, server, path, status):
+    fields = signed_request(signed_transport, server, path)
+    assert fields["status"] == status and fields["size"] == "0" and fields["hex"] == ""
+    assert fields["etag"] == '"test"' and fields["retry"] == "10"
+
+
+@pytest.mark.parametrize("path", ["/signed/oversized", "/signed/encoded", "/signed/duplicate"])
+def test_signed_get_rejects_unusable_headers(signed_transport, server, path):
+    fields = signed_request(signed_transport, server, path)
+    assert fields["status"] == "0" and fields["error"] and fields["size"] == "0"
+
+
+def test_signed_get_rejects_header_injection_and_large_body(signed_transport, server):
+    fields = signed_request(signed_transport, server, "/signed", "bad\r\nInjected: yes")
+    assert fields["status"] == "0" and not server.requests
+    fields = signed_request(signed_transport, server, "/signed", "", "5")
+    assert fields["status"] == "0" and fields["size"] == "0"
+    assert signed_request(signed_transport, server, "/signed", "", "6")["status"] == "200"

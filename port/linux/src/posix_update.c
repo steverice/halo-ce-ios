@@ -340,6 +340,8 @@ struct download
 	the text's end) */
 	char *memory;
 	size_t memory_size;
+	const char *etag;
+	struct posix_https_headers *headers;
 	update_progress_proc progress;
 	void *context;
 	unsigned long long received, total;
@@ -438,7 +440,7 @@ static int https_exchange(struct connection *connection, const char *url, const 
 	struct download *download, int timeout, char *location, size_t location_size, char *error, int error_size)
 {
 	char host[256], port[16], path[2048];
-	char request[3072];
+	char request[4096];
 	char line[MAXIMUM_HEADER_SIZE];
 	unsigned long long length = 0;
 	const char *agent = download->memory ? REQUEST_USER_AGENT : UPDATE_USER_AGENT;
@@ -469,8 +471,9 @@ static int https_exchange(struct connection *connection, const char *url, const 
 	{
 		snprintf(request, sizeof(request),
 			"GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\n"
-			"Accept: */*\r\nConnection: close\r\n\r\n",
-			path, host, agent);
+			"Accept: */*\r\nAccept-Encoding: identity\r\n%s%s%sConnection: close\r\n\r\n",
+			path, host, agent, download->etag && *download->etag ? "If-None-Match: " : "",
+			download->etag ? download->etag : "", download->etag && *download->etag ? "\r\n" : "");
 	}
 	if (!connection_write(connection, request, strlen(request)) ||
 		(form && !connection_write(connection, form, (size_t)form_size)) ||
@@ -514,6 +517,36 @@ static int https_exchange(struct connection *connection, const char *url, const 
 		else if (!strcasecmp(line, "Transfer-Encoding") && strcasestr(value, "chunked"))
 		{
 			chunked = 1;
+		}
+		else if (download->headers && !strcasecmp(line, "Content-Encoding") && strcasecmp(value, "identity"))
+		{
+			snprintf(error, (size_t)error_size, "unsupported content encoding");
+			connection_free(connection);
+			return 0;
+		}
+		else if (download->headers)
+		{
+			char *target = NULL;
+			size_t size = 0;
+
+			if (!strcasecmp(line, "Signature"))
+				target = download->headers->signature, size = sizeof(download->headers->signature);
+			else if (!strcasecmp(line, "Signature-Key"))
+				target = download->headers->signature_key, size = sizeof(download->headers->signature_key);
+			else if (!strcasecmp(line, "ETag"))
+				target = download->headers->etag, size = sizeof(download->headers->etag);
+			else if (!strcasecmp(line, "Retry-After"))
+				target = download->headers->retry_after, size = sizeof(download->headers->retry_after);
+			if (target)
+			{
+				if (*target || strlen(value) >= size)
+				{
+					snprintf(error, (size_t)error_size, "duplicate or oversized response header");
+					connection_free(connection);
+					return 0;
+				}
+				memcpy(target, value, strlen(value) + 1);
+			}
 		}
 		else if (!strcasecmp(line, "Location"))
 		{
@@ -662,6 +695,36 @@ int posix_https_request(const char *url, const char *form, int form_size, char *
 		TIMEOUT_MILLISECONDS, location, sizeof(location), error, error_size);
 	response[status == 200 ? download.received : 0] = 0;
 	/* (a redirect is not followed: the list answers where it is) */
+	return status;
+}
+
+int posix_https_get_signed(const char *url, const char *etag, char *response, int response_size,
+	int timeout_milliseconds, struct posix_https_headers *headers, char *error, int error_size)
+{
+	struct download download;
+	char location[2048];
+	int status;
+
+	if (headers)
+		memset(headers, 0, sizeof(*headers));
+	if (response && response_size > 0)
+		response[0] = 0;
+	if (error && error_size > 0)
+		error[0] = 0;
+	if (!url || !response || !headers || !error || response_size < 2 || error_size < 2 ||
+		(etag && (strlen(etag) >= sizeof(headers->etag) || strpbrk(etag, "\r\n"))))
+		return 0;
+	if (strncasecmp(url, "https://", 8) == 0 && !certificates_ready(error, error_size))
+		return 0;
+	memset(&download, 0, sizeof(download));
+	download.memory = response;
+	download.memory_size = (size_t)response_size;
+	download.etag = etag;
+	download.headers = headers;
+	status = https_get(url, NULL, 0, &download, timeout_milliseconds > 0 ? timeout_milliseconds :
+		TIMEOUT_MILLISECONDS, location, sizeof(location), error, error_size);
+	headers->body_size = status == 200 ? (int)download.received : 0;
+	response[headers->body_size] = 0;
 	return status;
 }
 

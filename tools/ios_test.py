@@ -340,6 +340,12 @@ run(BUILD/'natpmp-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/away_probe.c', '-o', BUILD/'away-probe')
 run(BUILD/'away-probe')
+# The master response is verified over exact capture bytes; malformed entries stay isolated.
+run('xcrun', 'clang', '-std=gnu11', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
+    '-Iport/linux/src', '-Iport/third_party/monocypher', 'port/ios/tests/master_list_probe.c',
+    'port/third_party/monocypher/monocypher.c', 'port/third_party/monocypher/monocypher-ed25519.c',
+    '-o', BUILD/'master-list-probe')
+run(BUILD/'master-list-probe', 'port/ios/tests/fixtures/master-list')
 # the Delta game list (delta_list.c): an answer read as /v1/games gives it, hostile and cut-off ones refused, the
 # announcement's form and when announcing goes on; and the network versions this build joins (halo_network_join.h)
 run('xcrun', 'clang', '-std=gnu89', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',

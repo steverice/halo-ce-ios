@@ -1240,10 +1240,14 @@ static const struct config_setting config_settings[] =
 		"held on the virtual screen until the next frame replaces it, and the same\n"
 		"frame pacer and frame timing as a shown run. Visibility answers come from\n"
 		"three frames before." },
+	{ "debug.master_list", _config_boolean, "true", "HALO_MASTER_LIST", _environment_value, _platform_all,
+		"Include the official OpenCE master's signed games in the internet browser.\n"
+		"Fetch on open or refresh, at most once every five seconds. Listed hosts\n"
+		"are contacted only when joining; the browser shows their region." },
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"
-		"empty for none." },
+		"\"browse-only\" logs public games without joining; empty for none." },
 	{ "debug.multiplayer_benchmark_probe", _config_boolean, "false", "HALO_MULTIPLAYER_BENCHMARK_PROBE",
 		_environment_value, _platform_all,
 		"In a four-local-player automated Chill Out Slayer match, draw only player\n"

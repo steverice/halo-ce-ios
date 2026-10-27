@@ -17,7 +17,8 @@ Automated system link sessions for testing the netcode without the menus
   the system link list does;
 - "browse" joins the first game the server browser lists (internet play's
   public games: a host's with debug.network_test_public), as picking it
-  there does, and then as "join".
+  there does, and then as "join";
+- "browse-only" logs the browser snapshot without joining a game.
 
 Once the game runs, every second each machine logs where every player's
 unit is, so the machines' views of the game can be compared.
@@ -139,6 +140,7 @@ static struct
 	long logged_time;
 	boolean public_game;
 	boolean browsing;
+	boolean browse_only;
 	boolean suite_owned;
 	boolean suite_synthetic_added;
 	unsigned long suite_setup_input_ticks;
@@ -681,9 +683,10 @@ static void network_test_read_settings(
 	{
 		network_test.mode = _network_test_join;
 	}
-	else if (!strcmp(setting, "browse"))
+	else if (!strcmp(setting, "browse") || !strcmp(setting, "browse-only"))
 	{
 		network_test.mode = _network_test_browse;
+		network_test.browse_only = !strcmp(setting, "browse-only");
 	}
 	network_test.players_wanted = (short)config_integer("debug.network_test_players");
 	network_test.public_game = config_boolean("debug.network_test_public") != 0;
@@ -1303,6 +1306,30 @@ static int network_test_suite_combat_ready(void)
 	return !network_test.suite_owned || !benchmark_mp_arena_enabled() || benchmark_mp_arena_combat_ready();
 }
 
+/* Observe discovery without offering an invite or contacting a listed host.
+Static storage keeps the complete browser snapshot off the game thread's stack. */
+static void network_test_browse_observe(void)
+{
+	static struct p2p_listing games[896], previous[896];
+	static int previous_count = -1;
+	int count = p2p_lobby_games(games, NUMBEROF(games)), index;
+
+	if (count == previous_count && !memcmp(games, previous, sizeof(*games) * (size_t)count))
+		return;
+	platform_log("network test: browser snapshot %d games (browse-only)", count);
+	for (index = 0; index < count; index++)
+	{
+		const struct p2p_listing *game = &games[index];
+
+		platform_log("network test: browser game source=%s name=%s region=%s players=%u/%u version=%d dedicated=%u",
+			game->from_master ? "master" : game->from_delta ? "delta" : "broker", game->name,
+			game->region, (unsigned)game->player_count, (unsigned)game->maximum_player_count,
+			(int)game->network_version, (unsigned)game->dedicated);
+	}
+	memcpy(previous, games, sizeof(*games) * (size_t)count);
+	previous_count = count;
+}
+
 void network_test_update(
 	boolean main_menu_loaded,
 	real seconds)
@@ -1508,6 +1535,11 @@ void network_test_update(
 			network_test.browsing = TRUE;
 			p2p_lobby_browse(TRUE);
 			platform_log("network test: browsing the public games");
+		}
+		if (network_test.browse_only)
+		{
+			network_test_browse_observe();
+			break;
 		}
 		count = p2p_lobby_games(games, NUMBEROF(games));
 		/* (the first that can be joined: no password, not failed) */

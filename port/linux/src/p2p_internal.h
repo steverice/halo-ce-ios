@@ -382,7 +382,20 @@ void p2p_delta_update(void);
 p2p_lock */
 void p2p_delta_quit(void);
 
+/* ---------- p2p_master.c: verified HTTPS master snapshots */
+
+/* Browser requests and each p2p pass, under p2p_lock. Quit is outside it. */
+void p2p_master_browse(int on);
+void p2p_master_refresh(void);
+void p2p_master_update(void);
+void p2p_master_quit(void);
+
 /* ---------- p2p_lobby.c: public games' listings */
+
+/* Host-signed listing admission; no shared state or network access. */
+int p2p_lobby_master_read(const unsigned char *bytes, int size, struct p2p_listing *shown);
+/* Replace the master snapshot under p2p_lock, including a 304 revalidation. */
+void p2p_lobby_master_games(const struct p2p_listing *games, int count);
 
 /* the games Delta's list gave (p2p_delta.c), which the browser shows with the
 brokers' (those on a broker's slot too are shown once); under p2p_lock */

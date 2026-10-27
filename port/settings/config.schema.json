@@ -1755,10 +1755,21 @@
             "apple"
           ]
         },
+        "master_list": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include the official OpenCE master's signed games in the internet browser. Fetch on open or refresh, at most once every five seconds. Listed hosts are contacted only when joining; the browser shows their region.",
+          "x-environment": "HALO_MASTER_LIST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "network_test": {
           "type": "string",
           "default": "",
-          "description": "Automated system link sessions for testing (port/linux/game/network_test.c): \"host:<map>\" hosts a game on that map, \"join\" joins the first game found; empty for none.",
+          "description": "Automated system link sessions for testing (port/linux/game/network_test.c): \"host:<map>\" hosts a game on that map, \"join\" joins the first game found; \"browse-only\" logs public games without joining; empty for none.",
           "x-environment": "HALO_NETWORK_TEST",
           "x-environment-style": "value",
           "x-platforms": [
