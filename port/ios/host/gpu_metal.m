@@ -522,21 +522,13 @@ struct transient
 
 static struct transient streams[FRAMES], snapshots[FRAMES];
 
-/* a handle's record, or nil: an array read, inlined, with no message */
-static inline __attribute__((always_inline)) id table_get(MetalTable *table, uint32_t handle)
-{
-	return handle < table->lookup_capacity ? table->lookup[handle] : nil;
-}
-
-static inline __attribute__((always_inline)) MetalBuffer *buffer_record(gpu_buffer handle)
-{
-	return table_get(buffers, handle);
-}
-
-static inline __attribute__((always_inline)) MetalTexture *texture_record(gpu_texture handle)
-{
-	return table_get(textures, handle);
-}
+/* a handle's record, or nil: an array read, with no message. Macros, not functions: a function returning the
+record makes ARC retain it for the return and release it after, even inlined (about a sixth of a draw's own
+time in gpu_metal_draw went to retains and releases); read straight from lookup, a record assigned to an
+__unsafe_unretained variable or passed on is not retained, and one assigned to a strong variable still is */
+#define table_get(table, handle) ((uint32_t)(handle) < (table)->lookup_capacity ? (table)->lookup[(uint32_t)(handle)] : nil)
+#define buffer_record(handle) ((MetalBuffer *)table_get(buffers, (handle)))
+#define texture_record(handle) ((MetalTexture *)table_get(textures, (handle)))
 
 /* room for size bytes at alignment in the current chunk, moving to the next
 (created as needed, never smaller than CHUNK_SIZE) when it doesn't fit; never
@@ -1921,9 +1913,13 @@ viewports cover; a test map's, the target's) and its map's physical size;
 NO if it isn't foveated this frame */
 static BOOL foveation_sizes(MetalTexture *record, MTLSize *screen, MTLSize *physical)
 {
-	id<MTLRasterizationRateMap> map = foveation_map(record);
+	id<MTLRasterizationRateMap> map;
 	int screen_width, screen_height, allocated_width, allocated_height;
 
+	/* (as foveation_map's own test, before the strong map: every draw asks for its targets and stages) */
+	if (!record || !record->description.foveated_eye)
+		return NO;
+	map = foveation_map(record);
 	if (!map)
 		return NO;
 	if (host_stereo_rate_map(record->description.foveated_eye - 1))
@@ -2454,13 +2450,14 @@ static unsigned long front_cache_index(const void *key, size_t length)
 	return (hash ^ (hash >> 8)) & (FRONT_CACHE_ENTRIES - 1);
 }
 
-/* the object cached for key, or nil */
-static id front_cache_get(struct front_cache *cache, const void *key, size_t length)
+/* the object cached for key, or NULL. Unretained (void *): its callers hand it straight back, and an id return
+would be retained and released at every draw; the object's own table keeps it */
+static void *front_cache_get(struct front_cache *cache, const void *key, size_t length)
 {
 	unsigned long index = front_cache_index(key, length);
 
 	return cache->entries[index].object && !memcmp(cache->entries[index].key, key, length) ?
-		cache->entries[index].object : nil;
+		(__bridge void *)cache->entries[index].object : NULL;
 }
 
 static void front_cache_put(struct front_cache *cache, const void *key, size_t length, id object)
@@ -3025,11 +3022,12 @@ static void pipeline_request(const struct pipeline_key *key, MetalShader *vertex
 
 /* the pipeline for a draw, or nil if it can't be made (cached either way)
 or, with pending set, isn't made yet (display.async_shaders: it's building) */
-static id<MTLRenderPipelineState> draw_pipeline(const struct gpu_draw *draw, const struct draw_attributes *attributes,
+/* (unretained, as front_cache_get: pipeline_table keeps every pipeline for good) */
+static void *draw_pipeline(const struct gpu_draw *draw, const struct draw_attributes *attributes,
 	MetalShader *vertex, MetalShader *pixel, unsigned exact, MTLPixelFormat color, MTLPixelFormat depth, BOOL *pending)
 {
 	struct pipeline_key key;
-	void *found;
+	void *found, *cached;
 	id pipeline;
 
 	*pending = NO;
@@ -3053,13 +3051,13 @@ static id<MTLRenderPipelineState> draw_pipeline(const struct gpu_draw *draw, con
 	memcpy(key.attribute_kinds, attributes->kinds, sizeof(key.attribute_kinds));
 	_Static_assert(sizeof(key) <= FRONT_CACHE_KEY, "pipeline_key fits the front cache");
 	_Static_assert(sizeof(key) <= METAL_COMPILE_KEY_BYTES, "pipeline_key fits the pipeline table");
-	if ((pipeline = front_cache_get(&pipeline_cache, &key, sizeof(key))))
-		return pipeline == [NSNull null] ? nil : pipeline;
+	if ((cached = front_cache_get(&pipeline_cache, &key, sizeof(key))))
+		return (__bridge id)cached == [NSNull null] ? NULL : cached;
 	switch (metal_compile_claim(&pipeline_table, &key, sizeof(key), &found))
 	{
 	case METAL_CLAIM_PENDING:
 		*pending = YES;
-		return nil;
+		return NULL;
 	case METAL_CLAIM_READY:
 		pipeline = (__bridge id)found;
 		break;
@@ -3073,15 +3071,15 @@ static id<MTLRenderPipelineState> draw_pipeline(const struct gpu_draw *draw, con
 		{
 			pipeline_request(&key, vertex, pixel, nil, 1);
 			*pending = YES;
-			return nil;
+			return NULL;
 		}
 		pipeline = pipeline_publish(&key, pipeline_build(&key, vertex, pixel, 1));
 		if (!pipeline)
-			return nil;
+			return NULL;
 	}
 	}
 	front_cache_put(&pipeline_cache, &key, sizeof(key), pipeline);
-	return pipeline == [NSNull null] ? nil : pipeline;
+	return pipeline == [NSNull null] ? NULL : (__bridge void *)pipeline;
 }
 
 static uint32_t gpu_metal_pipeline_built_take(struct gpu_pipeline_description *description)
@@ -3393,11 +3391,13 @@ static void gpu_metal_warm_end(void)
 	}
 }
 
-static id<MTLDepthStencilState> depth_state(const struct gpu_depth_stencil_state *state)
+/* (unretained, as front_cache_get: depth_states keeps every state for good) */
+static void *depth_state(const struct gpu_depth_stencil_state *state)
 {
 	struct gpu_depth_stencil_state key;
 	NSData *name;
 	id<MTLDepthStencilState> result;
+	void *cached;
 
 	/* the reference is the encoder's; tests that are off ignore the rest,
 	as GL does (gpu_gl.c sets them only while on) */
@@ -3419,8 +3419,8 @@ static id<MTLDepthStencilState> depth_state(const struct gpu_depth_stencil_state
 		key.stencil_write_mask = state->stencil_write_mask & 0xff;
 	}
 	_Static_assert(sizeof(key) <= FRONT_CACHE_KEY, "the depth key fits the front cache");
-	if ((result = front_cache_get(&depth_state_cache, &key, sizeof(key))))
-		return result;
+	if ((cached = front_cache_get(&depth_state_cache, &key, sizeof(key))))
+		return cached;
 	name = [NSData dataWithBytes:&key length:sizeof(key)];
 	result = depth_states[name];
 	if (!result)
@@ -3446,7 +3446,7 @@ static id<MTLDepthStencilState> depth_state(const struct gpu_depth_stencil_state
 		depth_states[name] = result;
 	}
 	front_cache_put(&depth_state_cache, &key, sizeof(key), result);
-	return result;
+	return (__bridge void *)result;
 }
 
 /* whether the GPU has border colors (Apple7 and later, and Macs): BORDER
@@ -3513,7 +3513,8 @@ but POINT is linear, ANISOTROPIC turns on anisotropy, the first level sampled
 is D3D's MAXMIPLEVEL, BORDER addressing clamps to the border (border_colors)
 or eligible zero border, else the edge, and the LOD bias is the shader's.
 white: an opaque white border, an exact border stage's second sampler. */
-static id<MTLSamplerState> sampler_state(const struct gpu_sampler_state *state, BOOL white, BOOL zero_border)
+/* (unretained, as front_cache_get: samplers keeps every sampler for good) */
+static void *sampler_state(const struct gpu_sampler_state *state, BOOL white, BOOL zero_border)
 {
 	struct
 	{
@@ -3522,14 +3523,15 @@ static id<MTLSamplerState> sampler_state(const struct gpu_sampler_state *state, 
 	} key;
 	NSData *name;
 	id<MTLSamplerState> result;
+	void *cached;
 
 	memset(&key, 0, sizeof(key));
 	key.state = *state;
 	key.white = white;
 	key.zero_border = zero_border;
 	_Static_assert(sizeof(key) <= FRONT_CACHE_KEY, "the sampler key fits the front cache");
-	if ((result = front_cache_get(&sampler_cache, &key, sizeof(key))))
-		return result;
+	if ((cached = front_cache_get(&sampler_cache, &key, sizeof(key))))
+		return cached;
 	name = [NSData dataWithBytes:&key length:sizeof(key)];
 	result = samplers[name];
 	if (!result)
@@ -3561,7 +3563,7 @@ static id<MTLSamplerState> sampler_state(const struct gpu_sampler_state *state, 
 		samplers[name] = result;
 	}
 	front_cache_put(&sampler_cache, &key, sizeof(key), result);
-	return result;
+	return (__bridge void *)result;
 }
 
 /* the bytes of one vertex of a format, for a stride of 0, which GL reads as
@@ -3711,7 +3713,7 @@ static void bind_stages(const struct gpu_draw *draw, unsigned exact)
 			sampler = stage_samplers[stage].sampler;
 		else
 		{
-			sampler = sampler_state(&packet->sampler, NO, zero_border);
+			sampler = (__bridge id<MTLSamplerState>)sampler_state(&packet->sampler, NO, zero_border);
 			stage_samplers[stage].state = packet->sampler;
 			stage_samplers[stage].zero_border = zero_border;
 			stage_samplers[stage].sampler = sampler;
@@ -3732,7 +3734,8 @@ static void bind_stages(const struct gpu_draw *draw, unsigned exact)
 
 			if (!(exact & (1u << stage)))
 				continue;
-			[encoder setFragmentSamplerState:sampler_state(&draw->stages[stage].sampler, YES, NO) atIndex:GPU_STAGE_COUNT + stage];
+			[encoder setFragmentSamplerState:(__bridge id<MTLSamplerState>)sampler_state(&draw->stages[stage].sampler, YES, NO)
+				atIndex:GPU_STAGE_COUNT + stage];
 			metal_state_always(&state_cache);
 			colors[stage][0] = (float)((color >> 16) & 0xff) / 255.0f;
 			colors[stage][1] = (float)((color >> 8) & 0xff) / 255.0f;
@@ -3856,7 +3859,7 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 		}
 #endif
 		draw_attributes_decide(draw, &attributes);
-		pipeline = draw_pipeline(draw, &attributes, vertex, pixel, exact, MTLPixelFormatBGRA8Unorm,
+		pipeline = (__bridge id<MTLRenderPipelineState>)draw_pipeline(draw, &attributes, vertex, pixel, exact, MTLPixelFormatBGRA8Unorm,
 			depth && depth->texture ? depth->texture.pixelFormat : MTLPixelFormatInvalid, &pending);
 		/* display.async_shaders: a draw whose pipeline is still building is
 		skipped this frame, as one that can't be made is; the runs of draws
@@ -3960,7 +3963,8 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			pipeline_changes.pixel_shader = draw->pixel_shader;
 		}
 		{
-			__unsafe_unretained id<MTLDepthStencilState> depth_stencil = depth_state(&draw->depth_stencil);
+			__unsafe_unretained id<MTLDepthStencilState> depth_stencil =
+				(__bridge id<MTLDepthStencilState>)depth_state(&draw->depth_stencil);
 			uint32_t reference = draw->depth_stencil.stencil_reference & 0xff;
 			MTLViewport viewport = { (double)draw->viewport.x, (double)draw->viewport.y,
 				(double)draw->viewport.width, (double)draw->viewport.height, draw->viewport.min_z, draw->viewport.max_z };

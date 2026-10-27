@@ -30,6 +30,7 @@ def test_zero_border_resource_transitions_select_and_bind_the_correct_sampler():
         "static unsigned exact_borders(",
         "static BOOL zero_border_eligible(",
         "static id<MTLSamplerState> sampler_state(",
+        "static void *sampler_state(",   # (unretained since the draw path's ARC change)
     ):
         # The initial red run predates the eligibility helper.
         if signature in source:
