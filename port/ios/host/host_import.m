@@ -14,6 +14,7 @@
 @interface HaloImportController : HaloLandscapeController <UIDocumentPickerDelegate>
 @property(nonatomic, copy) NSString *documents;
 @property(nonatomic, strong) UILabel *statusLabel;
+@property(nonatomic, strong) UILabel *introLabel;
 @property(nonatomic, strong) UIButton *chooseButton;
 @property(nonatomic, strong) UIButton *cancelButton;
 @property(nonatomic, strong) UIProgressView *progress;
@@ -69,11 +70,11 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
     dispatch_async(dispatch_get_main_queue(),^{
         controller.progress.hidden=NO;[controller.spinner stopAnimating];
         controller.progress.progress=fraction;
-        if(menu_phase) {
-            controller.statusLabel.text=[NSString stringWithFormat:@"Upscaling the main menu · %.0f%%",fraction*100];
-            controller.cancelButton.hidden=YES;
-        } else {
-            controller.statusLabel.text=[NSString stringWithFormat:@"Upscaling textures · %.0f%%\nYou can start playing now; the rest continues in menus.",fraction*100];
+        /* one bar over the whole set: gray until the main menu's textures are made, then blue with Start playing */
+        controller.progress.progressTintColor=menu_phase?UIColor.systemGrayColor:[UIColor colorWithRed:0.247 green:0.839 blue:1 alpha:1];
+        controller.statusLabel.text=[NSString stringWithFormat:@"Upscaling textures · %.0f%%",fraction*100];
+        if(menu_phase)controller.cancelButton.hidden=YES;
+        else {
             [controller.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
             controller.cancelButton.hidden=NO;
         }
@@ -97,7 +98,7 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
     if(icon.image)[stack addArrangedSubview:icon];
     UILabel *title=[UILabel new];title.text=@"VISR";title.font=[UIFont preferredFontForTextStyle:UIFontTextStyleLargeTitle];
     title.adjustsFontForContentSizeCategory=YES;title.textAlignment=NSTextAlignmentCenter;[stack addArrangedSubview:title];
-    UILabel *body=[UILabel new];body.text=@"Choose your own Halo: Combat Evolved Xbox XISO.\nWe'll import the game and start it for you.";
+    UILabel *body=[UILabel new];self.introLabel=body;body.text=@"Choose your own Halo: Combat Evolved Xbox XISO.\nWe'll import the game and start it for you.";
     body.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];body.adjustsFontForContentSizeCategory=YES;
     body.numberOfLines=0;body.textAlignment=NSTextAlignmentCenter;body.textColor=UIColor.secondaryLabelColor;[stack addArrangedSubview:body];
     self.chooseButton=[UIButton buttonWithType:UIButtonTypeSystem];
@@ -155,10 +156,10 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
    imported, so a device test can reach it, and its continued processing, without importing the disc again. */
 - (void)upscalePhaseOnly {
     self.importing=YES;self.cancelled=NO;self.lastProgressTime=0;
-    self.chooseButton.hidden=YES;self.cancelButton.hidden=NO;self.cancelButton.enabled=YES;
+    self.chooseButton.hidden=YES;self.introLabel.hidden=YES;self.cancelButton.hidden=NO;self.cancelButton.enabled=YES;
     [self.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
     self.cancelButton.hidden=YES;   // (Skip appears once the main menu's textures are made)
-    self.statusLabel.text=@"Upscaling the main menu";[self.spinner startAnimating];
+    self.progress.progressTintColor=UIColor.systemGrayColor;self.statusLabel.text=@"Upscaling textures";[self.spinner startAnimating];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         host_texture_upscale_prepare_import(self.documents.fileSystemRepresentation,upscale_progress,(__bridge void *)self);
         dispatch_async(dispatch_get_main_queue(),^{[self.spinner stopAnimating];self.importing=NO;self.ready=YES;});
@@ -168,7 +169,7 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
 - (void)importImage:(NSURL *)url {
     if (self.importing) return;
     self.importing=YES;self.cancelled=NO;self.lastProgressTime=0;
-    self.chooseButton.hidden=YES;self.cancelButton.hidden=NO;self.cancelButton.enabled=YES;
+    self.chooseButton.hidden=YES;self.introLabel.hidden=YES;self.cancelButton.hidden=NO;self.cancelButton.enabled=YES;
     self.progress.hidden=YES;self.progress.progress=0;[self.spinner startAnimating];
     self.statusLabel.text=@"Opening disc image… If it's in iCloud, it may need to download first.";
     BOOL scoped=[url startAccessingSecurityScopedResource];
@@ -233,7 +234,7 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
                 [self.spinner stopAnimating];self.cancelButton.hidden=YES;self.importing=NO;
                 if (self.backgroundTask!=UIBackgroundTaskInvalid) { [UIApplication.sharedApplication endBackgroundTask:self.backgroundTask];self.backgroundTask=UIBackgroundTaskInvalid; }
                 if (imported) {self.statusLabel.text=@"Ready. Starting Halo…";self.ready=YES;}
-                else {self.statusLabel.text=failure?:@"Could not import this disc image.";self.chooseButton.hidden=NO;self.progress.hidden=YES;}
+                else {self.statusLabel.text=failure?:@"Could not import this disc image.";self.chooseButton.hidden=NO;self.introLabel.hidden=NO;self.progress.hidden=YES;}
             });
         }
     });

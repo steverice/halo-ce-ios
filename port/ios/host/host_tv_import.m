@@ -85,7 +85,7 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
     atomic_store(&preparing_textures,1);
     /* the main menu's textures come first: Start playing is not offered until they are made */
     atomic_store(&menu_phase_textures,menu_phase);
-    status_set(import_extracting,done,total,menu_phase?@"Upscaling the main menu":@"Upscaling textures. You can start playing now; the rest continues in menus.");
+    status_set(import_extracting,done,total,@"Upscaling textures");
     return !atomic_load(&skip_textures);
 }
 /* Called with a complete upload; runs on its own thread. */
@@ -472,6 +472,7 @@ static UIImage *qr_image(NSString *text) {
 @interface HaloTVImportController : UIViewController
 @property(nonatomic,strong) UILabel *addressLabel,*codeLabel,*statusLabel;
 @property(nonatomic,strong) UIImageView *qr;
+@property(nonatomic,strong) UILabel *introLabel;
 @property(nonatomic,strong) UIProgressView *progress;
 @property(nonatomic,strong) UIButton *skipTexturesButton;
 @property(nonatomic,copy) NSString *shownURL;
@@ -492,7 +493,7 @@ static UIImage *qr_image(NSString *text) {
     UILabel *title=[self label:UIFontTextStyleTitle1 color:UIColor.labelColor];title.text=@"VISR";[stack addArrangedSubview:title];
     UILabel *body=[self label:UIFontTextStyleBody color:UIColor.secondaryLabelColor];
     body.text=@"To play, send your own Halo: Combat Evolved Xbox disc image (.iso or .xiso)\nfrom a phone or computer on the same network. No game files are included.";
-    [stack addArrangedSubview:body];
+    self.introLabel=body;[stack addArrangedSubview:body];
     self.qr=[UIImageView new];self.qr.layer.magnificationFilter=kCAFilterNearest;
     self.qr.backgroundColor=UIColor.whiteColor;self.qr.contentMode=UIViewContentModeScaleAspectFit;
     [self.qr.widthAnchor constraintEqualToConstant:300].active=YES;[self.qr.heightAnchor constraintEqualToConstant:300].active=YES;
@@ -529,6 +530,9 @@ static UIImage *qr_image(NSString *text) {
     unsigned serial=status.serial;enum import_state state=status.state;
     uint64_t done=status.done,total=status.total;NSString *message=@(status.message);
     pthread_mutex_unlock(&status_lock);
+    /* once the disc is imported and textures are being prepared, only the progress shows */
+    BOOL preparing=atomic_load(&preparing_textures);
+    self.introLabel.hidden=self.qr.hidden=self.addressLabel.hidden=self.codeLabel.hidden=preparing;
     BOOL wasHidden=self.skipTexturesButton.hidden;
     self.skipTexturesButton.hidden=!atomic_load(&preparing_textures)||atomic_load(&menu_phase_textures);
     if(wasHidden&&!self.skipTexturesButton.hidden)[self setNeedsFocusUpdate];
@@ -536,6 +540,7 @@ static UIImage *qr_image(NSString *text) {
         self.shownSerial=serial;
         self.statusLabel.text=message;
         self.progress.hidden=!total;
+        self.progress.progressTintColor=atomic_load(&preparing_textures)&&atomic_load(&menu_phase_textures)?UIColor.systemGrayColor:[UIColor colorWithRed:0.247 green:0.839 blue:1 alpha:1];
         if(total)self.progress.progress=(float)((double)done/total);
     }
     return state==import_done;

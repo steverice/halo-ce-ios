@@ -822,7 +822,7 @@ int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_pr
         if(!menu_phase&&!menu_logged&&menu_known){menu_logged=YES;
             host_logf(HOST_LOG_INFO,"Upscale import: the main menu's textures are ready after %.1f s (%zu of %zu); Start playing is offered",now()-start,menu.ready,menu.textures);}
         if(progress){
-            int keep_going=menu_phase?progress(context,menu.ready_units,menu.units,1):progress(context,p.ready_units,p.units,0);
+            int keep_going=progress(context,p.ready_units,p.units,menu_phase);
             if(!keep_going&&!menu_phase){skipped=YES;break;}
         }
         if(idle)break;
