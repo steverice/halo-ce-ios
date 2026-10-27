@@ -24,6 +24,11 @@ render_height = 0
 anisotropic_filtering = 16
 shadow_map_size = 512
 model_lod = "max"
+dynamic_resolution = true
+dynamic_resolution_floor = 1080
+
+[variable.display]
+dynamic_resolution_floor = 540
 
 [evidence."display.frame_rate"]
 basis = "measured"
@@ -49,3 +54,18 @@ source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, campaign setting
 basis = "measured"
 why = "Retain max model detail: the complete XPBNZMAZ window and all 20 UYY37PNG windows hold native 60 fps with this setting, anti-aliasing off, half-resolution effects and no texture replacements loaded. No matched active-gameplay measurement justifies lowering detail or enabling extra quality settings. Higher multiplayer player counts are separate workloads and are not qualified by this campaign profile."
 source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, campaign settings and renderer snapshots, 2026-10-24 UTC"
+
+[evidence."display.dynamic_resolution"]
+basis = "assumed"
+why = "Presented runs on an iPhone 17 Pro at native 2622x1206 and 60 fps, build 20261026.194605: a10-heroic and b30 stayed at the ceiling for every frame with dynamic resolution on (99.93% and 99.94% of frames on time against 99.9% and 100% with it off, GPU median unchanged), so it costs nothing where the GPU keeps up. Blood Gulch with 32 players, where fixed native missed (71.3% on time, 10 late frames, 3 stalls over 50 ms), used 1117 to 1206 lines and finished 84.8% on time with no late frames and no stalls. Measured on the 17 Pro, not on this model."
+source = "VISR presented benchmark runs on the iPhone 17 Pro, main c6f138a78, 2026-10-26"
+
+[evidence."display.dynamic_resolution_floor"]
+basis = "assumed"
+why = "Campaign at 1x enemies is the predictable workload, so the window is 1080 to native (about 8 to 9 percent below the ceiling); the 17 Pro's campaign windows never left the ceiling. Variable games (multiplayer, co-op, enemy multipliers) may go down to the 540 floor."
+source = "profiles/README.md, Dynamic resolution in both workloads; VISR presented benchmark runs on the iPhone 17 Pro, main c6f138a78, 2026-10-26"
+
+[evidence."variable.display.dynamic_resolution_floor"]
+basis = "assumed"
+why = "Blood Gulch with 32 players on the 17 Pro at native needed only 1117 lines to remove every late frame, but heavier maps and 64 players need the wider window the variable workload allows."
+source = "VISR presented benchmark runs on the iPhone 17 Pro, main c6f138a78, 2026-10-26"
