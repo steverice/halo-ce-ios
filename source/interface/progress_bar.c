@@ -320,6 +320,8 @@ extern unsigned long current_time;
 static boolean progress_bar_rendering_enabled= TRUE;
 /* port: port/linux/game/loading_screen.c */
 extern boolean halo_loading_screen_smooth(void);
+/* port: where the loading screen's tone stops following the bar (progress_bar_render) */
+#define SOUND_HOLD_PROGRESS 0.9f
 
 /* the compressed monk chant played behind the loading screen */
 byte compressed_monk_tone[18396]=
@@ -2080,6 +2082,7 @@ static void progress_bar_render(
 	real_rgb_color color;
 	D3DSurface *back_buffer;
 	real t;
+	real sound_progress; /* port */
 	long sound_index;
 	long stage;
 
@@ -2103,14 +2106,22 @@ static void progress_bar_render(
 		progress= 0.f;
 	last_t= progress;
 	color.red= color.green= color.blue= (real)pow(sin(progress*3.14159), 0.9f);
+	/* port: the loading screen's own end (the last of the compiles and the
+	level's first ticks behind it) takes the bar the rest of the way to 1,
+	where every layer's sin(pi t) is 0: the tone faded out for most of a
+	second before the level's first frame stopped it and the level's sounds
+	began. The Xbox's display lagged the copy and never reached 1, so its
+	tone was still sounding when the level's first frame cut it; here the
+	tone holds the mix it has at SOUND_HOLD_PROGRESS through that end */
+	sound_progress= halo_loading_screen_smooth() && progress>SOUND_HOLD_PROGRESS ? SOUND_HOLD_PROGRESS : progress;
 	for (sound_index= 0; sound_index<NUMBER_OF_PROGRESS_BAR_SOUNDS; sound_index++)
 	{
-		if (progress<ranges[sound_index][0])
+		if (sound_progress<ranges[sound_index][0])
 			t= 0.f;
-		else if (progress>ranges[sound_index][1])
+		else if (sound_progress>ranges[sound_index][1])
 			t= 0.f;
 		else
-			t= (progress - ranges[sound_index][0])/(ranges[sound_index][1] - ranges[sound_index][0]);
+			t= (sound_progress - ranges[sound_index][0])/(ranges[sound_index][1] - ranges[sound_index][0]);
 		if (progress_bar_globals.sounds[sound_index])
 		{
 			IDirectSoundBuffer_SetVolume(progress_bar_globals.sounds[sound_index],
