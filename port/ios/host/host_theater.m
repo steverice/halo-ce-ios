@@ -17,6 +17,7 @@ to read the eyes' poses and presents it full view. */
 #include <SDL3/SDL.h>
 #include "host_config.h"
 #include "host_theater.h"
+#include "host_foveation_scale.h"
 #include "host_stereo.h"
 #include "host.h"
 #include "ios_host.h"
@@ -384,9 +385,15 @@ void host_theater_attach(void *renderer)
 	{
 		if (@available(visionOS 26.0, *))
 		{
-			cp_layer_renderer_set_render_quality(layer_renderer, foveation_quality);
-			host_logf(HOST_LOG_INFO, "theater: the render quality is set to %.3f; the layer is %s, its render "
-				"quality %.3f for now", foveation_quality, state_name(cp_layer_renderer_get_state(layer_renderer)),
+			/* display.render_scale lowers the quality below the configuration's maximum
+			(host_foveation_scale.h): the Compositor fixes the views' logical size */
+			double scale = host_config_real("display.render_scale", 1.0);
+			float quality = host_foveation_scaled_quality(foveation_quality, (float)scale);
+
+			cp_layer_renderer_set_render_quality(layer_renderer, quality);
+			host_logf(HOST_LOG_INFO, "theater: the render quality is set to %.3f (display.render_scale %.2f of the "
+				"maximum %.3f); the layer is %s, its render "
+				"quality %.3f for now", quality, scale, foveation_quality, state_name(cp_layer_renderer_get_state(layer_renderer)),
 				cp_layer_renderer_get_render_quality(layer_renderer));
 		}
 		foveation_state_logged();

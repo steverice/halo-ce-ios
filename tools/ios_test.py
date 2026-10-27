@@ -721,6 +721,10 @@ for path, name, calls in (
     positions = [body.find(call) for call in calls]
     if -1 in positions or positions != sorted(positions):
         raise SystemExit(f'{path}: {name} must call {" then ".join(calls)}')
+# display.render_scale on the foveated stereo views: the render quality it maps to
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/foveation_scale_probe.c', '-o', BUILD/'foveation-scale-probe')
+run(BUILD/'foveation-scale-probe')
 # head-tracked stereo's look: the world holds still in the room while the head pans, and
 # the right stick's turn (the probe includes port/linux/game/stereo.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Iport/linux/src', '-Iport/ios/host',
