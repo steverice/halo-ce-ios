@@ -69,6 +69,10 @@ static void game_initialize_for_new_map(void) { initialized++; }
 static int network_player_is_valid(struct network_player *p) { return p->valid; }
 static int network_game_spawn_player(struct network_player *p) { (void)p; spawned++; return spawn_ok; }
 static void error(int level, const char *message) { (void)level; (void)message; }
+static int screens_begun, screens_finished, screens_cancelled;
+static void halo_loading_screen_begin_network(const char *name) { (void)name; screens_begun++; }
+static void halo_loading_screen_finish(void) { screens_finished++; }
+static void halo_loading_screen_cancel(void) { screens_cancelled++; }
 ''' + warm + loader + r'''
 int main(void) {
     struct network_game game = {0};
@@ -85,6 +89,8 @@ int main(void) {
             initialized = spawned = 0;
             assert(network_game_create_game_objects(&game));
             assert(initialized == 1 && spawned == 2);
+            /* the loading screen begins before the load and finishes after it, once */
+            assert(screens_begun == screens_finished + screens_cancelled && screens_cancelled == 0);
             /* The next draw records under the actual network map, even when
                warming is disabled or the map has no bundled list yet. */
             assert(!strcmp(shader_list.map, names[i]));
@@ -94,11 +100,14 @@ int main(void) {
     strcpy(shader_list.map, "ui");
     game.local_data.game_objects_loaded = 0;
     load_ok = 0;
+    screens_begun = screens_finished = screens_cancelled = 0;
     assert(!network_game_create_game_objects(&game));
+    assert(screens_begun == 1 && screens_finished == 0 && screens_cancelled == 1);
     assert(!strcmp(shader_list.map, "ui"));
     load_ok = 1;
     spawn_ok = 0;
     assert(!network_game_create_game_objects(&game));
+    assert(screens_begun == 2 && screens_finished == 0 && screens_cancelled == 2);
     assert(!strcmp(shader_list.map, "ui"));
     puts("PASS: network map attribution, repeat loads and failed loads");
 }

@@ -99,8 +99,7 @@ static const char *config_string(const char *name) {
     return !strcmp(name, "game.loading_screen") ? "on" : "";
 }
 static void platform_log(const char *format, ...) { (void)format; }
-static int network_map;
-static short main_get_solo_level_from_name(const char *name) { (void)name; return network_map ? NONE : 0; }
+static short main_get_solo_level_from_name(const char *name) { (void)name; return 0; }
 static void progress_bar_begin(int loaded) { (void)loaded; bar_active = 1; }
 static void progress_bar_end(void) { bar_active = 0; }
 static int progress_bar_is_active(void) { return bar_active; }
@@ -201,8 +200,8 @@ int main(void) {
        for outstanding compiles, has no tail, and ends the screen. */
     last_t = maximum_drawn = 0;
     minimum = 0;
-    scenario.type = 2;
-    network_map = 1;
+    /* (a network co-op game loads a solo scenario: still no tail) */
+    scenario.type = _scenario_type_solo;
     halo_loading_screen_begin_network("beavercreek");
     assert(bar_active && loading_screen.network);
     later_token = metal_compile_progress_schedule(&batch);

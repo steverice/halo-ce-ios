@@ -59,7 +59,8 @@ lobby's last frame, and halo_loading_screen_finish after the shader list's
 warmup), so the first frame of a multiplayer level is not drawn while the
 pipelines for its sky and structure are still compiling, which left the fog
 color on screen with the level filling in over the next frames. It has no tail
-(there is no opening cutscene) and no wait for upscaled textures, and it gives
+(the network game's own start stands in for the opening) and no wait for
+upscaled textures, and it gives
 up after NETWORK_HOLD_MILLISECONDS, since the network game's other machines
 wait for this one.
 
@@ -459,8 +460,8 @@ void halo_loading_screen_finish(void)
 		}
 		else if (loading_screen.network && now - loaded > NETWORK_HOLD_MILLISECONDS)
 		{
-			platform_log("loading screen: %lu compiles still running after %d ms; starting the network game",
-				outstanding, NETWORK_HOLD_MILLISECONDS);
+			platform_log("loading screen: the hold ended after %d ms with %lu compiles running; starting the network game",
+				NETWORK_HOLD_MILLISECONDS, outstanding);
 			break;
 		}
 		else if (outstanding && now - last_change > STALLED_MILLISECONDS)
