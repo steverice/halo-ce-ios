@@ -18,7 +18,17 @@ def test_dedicated_order_and_count(tmp_path):
 #include <string.h>
 #include <wchar.h>
 #include "p2p.h"
-#define usnprintf swprintf
+#include <stdarg.h>
+/* the game's usnprintf reads %s as a wide string; Apple's swprintf reads it as a narrow one */
+static void usnprintf(wchar_t *text, size_t count, wchar_t const *format, ...) {
+    wchar_t wide[128]; size_t n = 0;
+    for (; *format && n < 125; format++) {
+        wide[n++] = *format;
+        if (*format == L'%' && format[1] == L's') wide[n++] = L'l';
+    }
+    wide[n] = 0;
+    va_list arguments; va_start(arguments, format); vswprintf(text, count, wide, arguments); va_end(arguments);
+}
 #define ROW_TEXT_LENGTH 96
 struct advertised_game { int dedicated; };
 static struct { struct advertised_game *games[8]; int game_count; } multiplayer;
@@ -44,7 +54,9 @@ int main(void) {
     browser_game_count_text(text, L"Games", 4, 2);
     assert(!wcscmp(text,L"Games 4 (2 dedicated)"));
     browser_game_count_text(text, L"Games", 0, 0);
-    assert(!wcscmp(text,L"Games 0 (0 dedicated)"));
+    assert(!wcscmp(text,L"Games 0"));
+    browser_game_count_text(text, L"Games", 3, 0);
+    assert(!wcscmp(text,L"Games 3"));
     return 0;
 }
 '''

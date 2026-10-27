@@ -3435,7 +3435,10 @@ static void browser_dedicated_first(void)
 
 static void browser_game_count_text(wchar_t *text, wchar_t const *label, int games, int dedicated)
 {
-	usnprintf(text, ROW_TEXT_LENGTH - 1, L"%s %d (%d dedicated)", label, games, dedicated);
+	if (dedicated > 0)
+		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%s %d (%d dedicated)", label, games, dedicated);
+	else
+		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%s %d", label, games);
 }
 
 static void browser_games_read(void)
