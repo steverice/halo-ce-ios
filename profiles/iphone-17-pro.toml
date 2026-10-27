@@ -9,12 +9,15 @@ models = ["iPhone18,1"]
 and_newer = true
 
 [display]
-frame_rate = "60"
+frame_rate = "120"
 render_height = 1080
 anisotropic_filtering = 16
 shadow_map_size = 512
 anti_aliasing = "fxaa"
 dynamic_resolution = true
+
+[variable.display]
+frame_rate = "60"
 
 [network]
 player_capacity = 32
@@ -38,6 +41,11 @@ why = "1080 lines, the top of the ladder's 60 frames a second tiers, measured wa
 source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
 
 [evidence."display.frame_rate"]
+basis = "assumed"
+why = "Steve 2026-10-27: Pro iPhones target 120 in campaign; validate with benchmarks. The earlier settings sweep did not hold 120 at maximum quality (variable games keep 60, below)."
+source = "Steve, 2026-10-27"
+
+[evidence."variable.display.frame_rate"]
 basis = "measured"
 why = "120 frames a second does not hold after the ten minute warm-up soak: at 1080 lines 93.6% (a10) and 98.5% (d40) of frames were within 8.3 ms, at 900 lines 97.1% and 96.1% (12 rounds each). At 60, 1080 lines held 99.96% and 100% at 1x and 99.82 to 99.92% at 2x enemies; the presented d40 run at 60 showed every one of 4,560 frames on time. The iPhone 15 Pro profile caps at 60 for the same reason. Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
 source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"

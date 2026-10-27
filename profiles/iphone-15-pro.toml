@@ -19,7 +19,7 @@ platform = "ios"
 models = ["iPhone16,1", "iPhone16,2"]
 
 [display]
-frame_rate = "60"
+frame_rate = "120"
 render_height = 0
 anisotropic_filtering = 16
 shadow_map_size = 512
@@ -28,12 +28,18 @@ dynamic_resolution = true
 dynamic_resolution_floor = 1080
 
 [variable.display]
+frame_rate = "60"
 dynamic_resolution_floor = 540
 
 [network]
 player_capacity = 32
 
 [evidence."display.frame_rate"]
+basis = "assumed"
+why = "Steve 2026-10-27: Pro iPhones target 120 in campaign; validate with benchmarks. The earlier settings sweep did not hold 120 at maximum quality (variable games keep 60, below)."
+source = "Steve, 2026-10-27"
+
+[evidence."variable.display.frame_rate"]
 basis = "measured"
 why = "Keep 60: UYY37PNG's 20 native-resolution campaign windows, including 1.5x and 2x enemies, delivered 99.666% to 100% of actual presentation intervals within the 60 fps budget at 0.1 ms precision, with nominal thermal state throughout. The slowest window averaged 59.84 fps, with presentation median/p90/p99 16.670/16.670/16.670 ms and maximum 66.682 ms (three intervals over 25 ms). XPBNZMAZ's complete a10 window averaged 59.88 fps with 99.833% on time. LYY9JBRZ at native 120 Hz fails the higher tier even before heating: a10 1.5x averaged 102.60 fps, presentation p90 16.670 ms against an 8.3 ms budget, only 83.220% on time. No measured lower-cost configuration establishes 120 fps with 1.5x enemies."
 source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, campaign, 2026-10-24 UTC; LYY9JBRZ, build 20261022.222500, a10-heroic-x1-5, 2026-10-23 UTC"
