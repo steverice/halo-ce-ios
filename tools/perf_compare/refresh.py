@@ -104,6 +104,8 @@ def fetch(target, cache):
                 'network_version': target.get('network_version', ''), 'release_kind': 'hosted web build',
                 'artifact': 'hosted entry document', 'sha256': digest(path)}
     releases = release_metadata(target['repo'])
+    if target.get('tag'):  # pin a release when newer ones exist, so a matrix measures the build it names
+        releases = [release for release in releases if release.get('tag_name') == target['tag']]
     tag, asset = select_release(releases, target['asset'])
     folder = cache / target['id'] / tag
     folder.mkdir(parents=True, exist_ok=True)

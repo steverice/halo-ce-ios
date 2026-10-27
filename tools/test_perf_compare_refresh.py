@@ -481,3 +481,10 @@ def test_console_windows_are_not_measured_on_a_target_without_a_console(tmp_path
     assert calls == ['c10']
     [record] = json.loads((tmp_path / 'summary.json').read_text())['records']
     assert record['window_status'] == {'x70-bridge': {'status': 'not_measured', 'reason': 'no unattended console'}}
+
+
+def test_a_pinned_tag_selects_that_release_not_the_newest():
+    m = engine()
+    releases = [{'tag_name': 'build-46', 'assets': [{'name': 'a.dmg'}]}, {'tag_name': 'build-44', 'assets': [{'name': 'a.dmg'}]}]
+    assert m.select_release(releases, 'a.dmg')[0] == 'build-46'
+    assert m.select_release([r for r in releases if r['tag_name'] == 'build-44'], 'a.dmg')[0] == 'build-44'
