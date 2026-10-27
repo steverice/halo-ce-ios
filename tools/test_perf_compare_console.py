@@ -43,6 +43,9 @@ class Hooks(consolewin.Hooks):
     def __init__(self, game):
         self.game, self.log = game, []
 
+    def prepare(self):
+        self.log.append(('prepare', self.game.t))
+
     def begin(self):
         self.log.append(('begin', self.game.t))
 
@@ -79,8 +82,8 @@ def test_battle_sends_deathless_then_commands_warms_up_then_samples_and_reads_co
     out = consolewin.run_window(window, game.console, hooks, game)
     sent = [line for _, line in game.sent_at]
     assert sent[0] == '(set cheat_deathless_player true)' and sent[1:7] == window['commands']
-    assert [name for name, _ in hooks.log] == ['begin', 'mid', 'end']
-    begin, mid, end = (t for _, t in hooks.log)
+    assert [name for name, _ in hooks.log] == ['prepare', 'begin', 'mid', 'end']
+    _, begin, mid, end = (t for _, t in hooks.log)
     assert begin - game.sent_at[6][0] >= window['warmup_s']
     assert end - begin == pytest.approx(60) and mid - begin == pytest.approx(30)
     assert out['start']['(ai_living_count ext_a_area_a_cov)'] == '40'
@@ -96,7 +99,7 @@ def test_cutscene_ends_on_the_print_and_calls_the_script_after_the_lead_in():
     call = [(t, line) for t, line in game.sent_at if 'x70_bridge' in line]
     assert call and call[0][1] == '(begin (x70_bridge) (print "XPDONE"))' and call[0][0] >= 20
     assert out['ended'] == 'print' and out['seconds'] == pytest.approx(126.3, abs=0.2)
-    assert [name for name, _ in hooks.log] == ['begin', 'mid', 'end']
+    assert [name for name, _ in hooks.log] == ['prepare', 'begin', 'mid', 'end']
 
 
 def test_cutscene_without_a_print_times_out_at_one_and_a_half_times_the_expected_length():
@@ -127,7 +130,7 @@ def test_bot_window_runs_from_start_to_end_print_and_reads_fingerprints_at_both_
                     timed=[(30, 'xp_start\r\n'), (90, 'xp_end\r\n')])
     hooks = Hooks(game)
     out = consolewin.run_window(window, game.console, hooks, game)
-    assert [name for name, _ in hooks.log] == ['begin', 'mid', 'end']
+    assert [name for name, _ in hooks.log] == ['prepare', 'begin', 'mid', 'end']
     assert out['ended'] == 'print' and out['seconds'] == pytest.approx(60, abs=0.5)
     assert out['start']['(game_time)'] == '900' and out['end']['(unit_get_total_grenade_count (unit (list_get (players) 0)))'] == '3'
     schedule = [line for _, line in game.sent_at if 'sleep_until' in line][0]

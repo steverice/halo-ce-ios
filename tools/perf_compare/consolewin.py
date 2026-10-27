@@ -98,9 +98,11 @@ def number(text):
 
 
 class Hooks:
-    """What the adapter measures: `begin` opens the sampling window, `mid` takes the mid-window screenshot and
-    `end` closes the window and collects the trace. Each returns nothing."""
+    """What the adapter measures. `prepare` does the slow setup (trace setup, its settle wait, the background CPU
+    baseline) while the level runs, before the window opens; `begin` only marks the window's start, `mid` takes the
+    mid-window screenshot and `end` closes the window and collects the trace. Each returns nothing."""
 
+    def prepare(self): ...
     def begin(self): ...
     def mid(self): ...
     def end(self): ...
@@ -117,14 +119,15 @@ def _living(window):
 def run_battle(window, console, hooks, clock, lead_in=10.0):
     """Deathless player, one batch of commands, a warm-up, then the sample; counts are read before and after."""
     clock.sleep(lead_in)
+    hooks.prepare()
     console.send('(set cheat_deathless_player true)')
     for command in window['commands']:
         console.send(command)
         clock.sleep(0.2)
     clock.sleep(window['warmup_s'])
     start_reads = _read_all(console, _living(window) + ['(game_time)', '(unit_get_health (unit (list_get (players) 0)))'], clock)
-    started = clock.now()
     hooks.begin()
+    started = clock.now()
     half = window['sample_s'] / 2
     clock.sleep(half)
     hooks.mid()
@@ -138,13 +141,14 @@ def run_battle(window, console, hooks, clock, lead_in=10.0):
 def run_cutscene(window, console, hooks, clock, prints=True, lead_in=20.0):
     """Call the script from the console; sample until its print arrives (or its tick budget passes)."""
     clock.sleep(lead_in)
+    hooks.prepare()
     expected = window['expected_ticks']
     budget = expected / TICKS_PER_SECOND
     start_tick = number(console.query('(game_time)', clock))
     mark = console.mark()
     console.send(f'(begin ({window["script"]}) (print "XPDONE"))')
-    started = clock.now()
     hooks.begin()
+    started = clock.now()
     shot_done, ended = False, 'timeout'
     while clock.now() - started < budget * CUTSCENE_GRACE:
         elapsed = clock.now() - started
@@ -175,6 +179,7 @@ def run_cutscene(window, console, hooks, clock, prints=True, lead_in=20.0):
 def run_bot(window, console, hooks, clock, prints=True):
     """The scripted player for `ticks` game ticks from `start_tick`; the game freezes at the end so reads are exact."""
     t0, ticks = window['start_tick'], window['ticks']
+    hooks.prepare()
     console.send('(set cheat_deathless_player true)')
     mark = console.mark()
     console.send(f'(begin (sleep_until (>= (game_time) {t0}) 1) (print "XP_START") (sleep {ticks}) (print "XP_END") (game_speed 0))')

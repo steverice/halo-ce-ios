@@ -315,7 +315,7 @@ def _native(target, scenario, out, config):
         state = {}
         owned = {process.pid}
 
-        def begin_sample():
+        def prepare_sample():
             nonlocal logger, log_stream
             host_state(check_load=False)
             if config.get('capture_windows'):
@@ -327,14 +327,16 @@ def _native(target, scenario, out, config):
                 # A collect right after setup sometimes returns no frames (6 of 18 first windows in the survey).
                 time.sleep(TRACE_SETUP_WAIT_S)
             state['baseline'] = sample_background(owned=owned) if config.get('cpu_policy') == 'baseline' else None
-            state['cpu_before'] = cpu_snapshot()
-            state['measured_start'] = time.monotonic()
-            state['trace_start'] = time.time()
             state['logger'] = subprocess.Popen(
                 ['/usr/bin/log', 'stream', '--style', 'ndjson', '--level', 'debug', '--predicate',
                  f'processIdentifier == {process.pid} AND subsystem == "com.apple.metal.hud"'],
                 stdout=state['log_stream'], stderr=subprocess.STDOUT)
             logger, log_stream = state['logger'], state['log_stream']
+
+        def begin_sample():
+            state['cpu_before'] = cpu_snapshot()
+            state['measured_start'] = time.monotonic()
+            state['trace_start'] = time.time()
 
         def end_sample():
             if process.poll() is not None:
@@ -362,11 +364,13 @@ def _native(target, scenario, out, config):
         if window['kind'] == 'opening':
             time.sleep(config.get('warmup_seconds', 15))
             time.sleep(config.get('native_delay_seconds', 0))
+            prepare_sample()
             begin_sample()
             time.sleep(window.get('sample_s', config.get('seconds', 60)))
             end_sample()
         else:
             class SampleHooks(consolewin.Hooks):
+                prepare = staticmethod(prepare_sample)
                 begin = staticmethod(begin_sample)
                 end = staticmethod(end_sample)
 
