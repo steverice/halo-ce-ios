@@ -10,13 +10,13 @@
 # this profile remains provisional, especially for the smaller phone.
 
 schema = 1
-name = "iPhone 15 Pro and Pro Max"
+name = "iPhone 15 Pro and 16 Pro"
 kind = "model"
 status = "provisional"
 
 [match]
 platform = "ios"
-models = ["iPhone16,1", "iPhone16,2"]
+models = ["iPhone16,1", "iPhone16,2", "iPhone17,1", "iPhone17,2"]
 
 [display]
 frame_rate = "120"

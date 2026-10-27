@@ -386,6 +386,9 @@ static void check_unprofiled_models(const char *shipped)
 	   16e's, at 60. */
 	profile = resolve_model(shipped, "ios", "iPhone18,3", 10, 7600, 2622, 1206, 120);
 	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") && has(&profile, "display.frame_rate", "60"));
+	/* iPhone 16 Pro (A18 Pro, 120 Hz): matched by the 15 Pro's profile itself, 120 in a predictable workload. */
+	profile = resolve_model(shipped, "ios", "iPhone17,1", 9, 7600, 2622, 1206, 120);
+	assert(!profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "120"));
 	/* iPad Air 3 (A12): the iPad Pro (A10X) profile, 900 lines at 30; nothing measured is closer. */
 	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") &&
