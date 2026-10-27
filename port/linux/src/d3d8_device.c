@@ -445,8 +445,8 @@ static void screen_mode_choose(long *width, float scale[2], float native[2], flo
 	{
 		/* dynamic resolution: the planner's lines for the next frames, inside
 		targets allocated at these (the ceiling); 0 when it is off or refused */
-		/* A passing refusal (a menu, a benchmark's own lines, the companion
-		picture, a hand-set scale) keeps the pool and renders its ceiling,
+		/* A passing refusal (a menu, a benchmark's own lines, a
+		hand-set scale) keeps the pool and renders its ceiling,
 		so the targets are neither freed nor made again; only the renderer,
 		stereo, the native HUD and the rate map test turn it off */
 		int refused = dynamic_resolution_refused();
@@ -2469,8 +2469,6 @@ static int dynamic_resolution_refused(void)
 		why = "the render scale was changed by hand";
 	else if (scene_views_last > 1)
 		why = "split screen";
-	else if (companion_active())
-		why = "an external display's companion picture";
 	/* (in-engine cutscenes are rendered as gameplay is; the menus are not measured) */
 	else if (halo_scene_class() == CONFIG_SCENE_MENU)
 		why = "the menus";

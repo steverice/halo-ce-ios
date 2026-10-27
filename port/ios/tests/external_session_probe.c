@@ -25,4 +25,20 @@ int main(void) {
     host_external_session_complete(&session);
     assert(!session.pending);
     puts("PASS: scene ownership, replacement, disconnect before output, and reconnect before commit");
+    /* a display plugged in while the app runs, never offered a scene: the registration is made again, twice at most */
+    struct host_external_refresh refresh={0,0};
+    assert(!host_external_refresh_due(&refresh,0,0,0,10.0));
+    assert(!host_external_refresh_due(&refresh,1,0,0,10.0));
+    assert(!host_external_refresh_due(&refresh,1,0,0,11.0));
+    assert(host_external_refresh_due(&refresh,1,0,0,11.6));
+    assert(!host_external_refresh_due(&refresh,1,0,0,12.0));
+    assert(host_external_refresh_due(&refresh,1,0,0,13.2));
+    assert(!host_external_refresh_due(&refresh,1,0,0,20.0));
+    /* it resets when the display goes, becomes available or connects */
+    assert(!host_external_refresh_due(&refresh,0,0,0,21.0));
+    assert(!host_external_refresh_due(&refresh,1,0,0,22.0));
+    assert(host_external_refresh_due(&refresh,1,0,0,23.6));
+    assert(!host_external_refresh_due(&refresh,1,1,0,30.0) && !refresh.seen_at && !refresh.attempts);
+    assert(!host_external_refresh_due(&refresh,1,0,1,31.0) && !refresh.seen_at);
+    puts("PASS: the scene accessory is registered again for a display that was never offered a scene");
 }

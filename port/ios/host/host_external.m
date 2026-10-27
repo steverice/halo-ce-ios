@@ -72,6 +72,8 @@ static CGSize mode_accepted;
 static int mode_reissued, mode_reasserts;
 static int first_low=-1, accepting_low;
 static id accessory_registration;
+static int accessory_available_logged=-1;
+static struct host_external_refresh accessory_refresh;
 static struct host_audio_route audio_route;
 static _Atomic int audio_recover;
 static UILabel *playing_label;
@@ -83,6 +85,39 @@ static Class configuration_class[2];
 @implementation VISRExternalView
 + (Class)layerClass { return CAMetalLayer.class; }
 @end
+/* The scene's root view is plain black; the Metal view inside it is the largest aspect-correct rectangle of the
+   screen the drawable fits, so a picture rendered below the screen's size is scaled up by the layer to fill it
+   (bars only where the shapes differ), whatever size the system gives the scene. */
+static VISRExternalView *external_metal_view;
+static CGSize external_drawable;
+static void external_fit(UIView *root);
+static void external_log_geometry(const char *when) {
+    UIView *root=external_window.rootViewController.view;
+    UIScreen *screen=candidate_screen;
+    host_logf(HOST_LOG_INFO,"external display: %s: scene %.0fx%.0f pt, screen scale %.2f (native %.2f, %.0fx%.0f px), picture %.0fx%.0f pt at %.0f,%.0f for a %.0fx%.0f drawable",
+        when,root.bounds.size.width,root.bounds.size.height,screen.scale,screen.nativeScale,
+        screen.nativeBounds.size.width,screen.nativeBounds.size.height,
+        external_metal_view.frame.size.width,external_metal_view.frame.size.height,
+        external_metal_view.frame.origin.x,external_metal_view.frame.origin.y,
+        external_drawable.width,external_drawable.height);
+}
+@interface VISRExternalRoot : UIView
+@end
+@implementation VISRExternalRoot
+- (void)layoutSubviews { [super layoutSubviews];external_fit(self); }
+@end
+static void external_fit(UIView *root) {
+    if(!external_metal_view || external_metal_view.superview!=root)return;
+    double rect[4];
+    if(!host_external_fit(root.bounds.size.width,root.bounds.size.height,(int)external_drawable.width,
+        (int)external_drawable.height,rect))return;
+    CGRect frame=CGRectMake(rect[0],rect[1],rect[2],rect[3]);
+    CAMetalLayer *layer=(CAMetalLayer *)external_metal_view.layer;
+    layer.contentsGravity=kCAGravityResize;
+    if(!CGRectEqualToRect(external_metal_view.frame,frame))external_metal_view.frame=frame;
+    /* (a size UIKit changed with the frame goes back to the renderer's) */
+    if(!CGSizeEqualToSize(layer.drawableSize,external_drawable))layer.drawableSize=external_drawable;
+}
 @interface VISRExternalSceneDelegate : NSObject <UIWindowSceneDelegate>
 @property(nonatomic,strong) UIWindow *window;
 @end
@@ -92,6 +127,13 @@ static NSString *audio_route_text(void) {
     for(AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
         [ports addObject:[NSString stringWithFormat:@"%@:%@:%@",port.portType,port.UID,port.portName]];
     return [ports componentsJoinedByString:@", "];
+}
+/* an output that carries video as well as sound (HDMI, AirPlay): a display the system may hand a scene */
+static int audio_route_has_video(void) {
+    for (AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
+        if ([port.portType isEqualToString:AVAudioSessionPortHDMI] ||
+            [port.portType isEqualToString:AVAudioSessionPortAirPlay]) return 1;
+    return 0;
 }
 static NSString *port_name(void) {
     for (AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
@@ -210,8 +252,11 @@ static int renderer_is_metal(void) {
     if(self.window && external_window==self.window)return;
     self.window=[[UIWindow alloc]initWithWindowScene:window_scene];
     UIViewController *controller=[UIViewController new];
-    controller.view=[[VISRExternalView alloc]initWithFrame:window_scene.coordinateSpace.bounds];
+    controller.view=[[VISRExternalRoot alloc]initWithFrame:window_scene.coordinateSpace.bounds];
     controller.view.backgroundColor=UIColor.blackColor;
+    external_metal_view=[[VISRExternalView alloc]initWithFrame:controller.view.bounds];
+    external_metal_view.backgroundColor=UIColor.blackColor;
+    [controller.view addSubview:external_metal_view];
     self.window.rootViewController=controller;self.window.hidden=NO;
     external_window=self.window;candidate_screen=window_scene.screen;
     candidate_screen.overscanCompensation=UIScreenOverscanCompensationNone;
@@ -224,6 +269,7 @@ static int renderer_is_metal(void) {
         candidate_screen=nil;requested_index=-1;
         pthread_mutex_lock(&snapshot_lock);snapshot.generation++;pthread_mutex_unlock(&snapshot_lock);
     }
+    if(external_window==self.window)external_metal_view=nil;
     self.window=nil;(void)scene;
 }
 @end
@@ -235,6 +281,14 @@ void host_external_install(void) {
     if(installed++)return;
     [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionRouteChangeNotification object:nil queue:nil
         usingBlock:^(NSNotification *note){(void)note;atomic_store(&audio_changed,1);}];
+    /* a mode change (the display's own, or the one VISR asked for) resizes the scene: place the picture again */
+    [NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:nil queue:NSOperationQueue.mainQueue
+        usingBlock:^(NSNotification *note){
+            if(note.object!=candidate_screen || !external_window)return;
+            UIView *root=external_window.rootViewController.view;
+            [root setNeedsLayout];[root layoutIfNeeded];
+            if(external_drawable.width>0)external_log_geometry("the display changed its mode");
+        }];
     [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionInterruptionNotification object:nil queue:nil
         usingBlock:^(NSNotification *note){
             if([note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue]==AVAudioSessionInterruptionTypeEnded) {
@@ -292,6 +346,7 @@ void host_external_attach(void *window_pointer,int metal) {
         if(metal && !accessory_registration)
             accessory_registration=[phone_window.rootViewController registerSceneAccessory:
                 [UISceneAccessory externalNonInteractiveSceneAccessoryWithConfiguration:external_configuration()]];
+        accessory_available_logged=-1;
     }
 #endif
 #endif
@@ -444,6 +499,25 @@ void host_external_poll(void) {
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000
     if(@available(iOS 27.0,*)) {
         UISceneAccessoryRegistration *registration=accessory_registration;
+        if(registration && accessory_available_logged!=(int)registration.available) {
+            accessory_available_logged=registration.available;
+            host_logf(HOST_LOG_INFO,"external display: scene accessory %s (%lu screens, route %s)",
+                registration.available?"available":"not available",(unsigned long)UIScreen.screens.count,audio_route_text().UTF8String);
+        }
+        /* a display plugged in while the game runs can be left mirrored with the registration never available:
+           register it again (at most twice) so the system offers the scene */
+        if(registration && metal_enabled) {
+            int seen=UIScreen.screens.count>1 || audio_route_has_video();
+            if(host_external_refresh_due(&accessory_refresh,seen,registration.available,candidate_screen!=nil,
+                CACurrentMediaTime())) {
+                host_logf(HOST_LOG_INFO,"external display: a display is connected but the scene accessory is not available; registering it again");
+                [phone_window.rootViewController unregisterSceneAccessory:registration];
+                accessory_registration=[phone_window.rootViewController registerSceneAccessory:
+                    [UISceneAccessory externalNonInteractiveSceneAccessoryWithConfiguration:external_configuration()]];
+                accessory_available_logged=-1;accessory_available_since=0;
+                registration=accessory_registration;
+            }
+        }
         if(registration.available && !candidate_screen) {
             if(!accessory_available_since)accessory_available_since=CACurrentMediaTime();
             else if(accessory_available_since>0 && CACurrentMediaTime()-accessory_available_since>3) {
@@ -542,7 +616,8 @@ void host_external_commit(int allow_pause) {
                 (int)candidate_screen.currentMode.size.height,drawable_cap,&width,&height)) {
                 session_state.pending=1;return;
             }
-            if(!output_switch((__bridge void *)external_window.rootViewController.view.layer,
+            external_drawable=CGSizeMake(width,height);
+            if(!output_switch((__bridge void *)external_metal_view.layer,
                 candidate_screen,width,height)) {
                 session_state.pending=1;return;
             }
@@ -569,6 +644,8 @@ void host_external_commit(int allow_pause) {
             }
             playing_label.text=[NSString stringWithFormat:@"Playing on %@",port_name()];
             playing_label.hidden=NO;last_touch=CACurrentMediaTime();label_layout();
+            external_fit(external_window.rootViewController.view);
+            external_log_geometry("the game moved to the display");
             host_logf(HOST_LOG_INFO,"external display: the game moved to the display (drawable %dx%d)",output_width,output_height);
         } else if(!companion_on) {
             /* the display went away before the game moved to it: the renderer never left this device */

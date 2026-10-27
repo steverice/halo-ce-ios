@@ -81,3 +81,15 @@ int host_external_mode_drawable(int width,int height,int cap,int *out_width,int 
     *out_height=(int)fmax(1,floor(height*scale));
     return 1;
 }
+
+int host_external_fit(double bounds_width,double bounds_height,int width,int height,double out[4])
+{
+    if(bounds_width<=0 || bounds_height<=0 || width<=0 || height<=0)return 0;
+    double scale=fmin(bounds_width/width,bounds_height/height);
+    double fitted_width=width*scale,fitted_height=height*scale;
+    if(fabs(fitted_width/bounds_width-1.0)<=0.005)fitted_width=bounds_width;
+    if(fabs(fitted_height/bounds_height-1.0)<=0.005)fitted_height=bounds_height;
+    out[0]=(bounds_width-fitted_width)/2;out[1]=(bounds_height-fitted_height)/2;
+    out[2]=fitted_width;out[3]=fitted_height;
+    return 1;
+}
