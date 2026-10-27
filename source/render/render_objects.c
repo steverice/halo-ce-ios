@@ -90,6 +90,7 @@ symbols in this file:
 #include "math/real_math.h"
 #include "bitmaps/bitmaps.h"
 #include "render/render.h"
+#include "render/shadow_minimum_size.h"
 #include "camera/camera_scripting.h"
 #include "editor/editor_stubs.h"
 #include "rasterizer/rasterizer.h"
@@ -313,6 +314,91 @@ void rasterizer_environment_shadow_generate_end(void);
 void rasterizer_environment_shadow_apply_begin(short handle);
 void rasterizer_environment_shadows_apply_end(void);
 
+/* port: display.shadow_minimum_size (port/linux/src/port_config.c,
+shadow_minimum_size.h): units the local players ride with (their own, their
+vehicle and its other riders) and a dead local player's body keep the game's
+floor. Read once a frame by
+render_object_shadows; the device benchmark's cost runs set it through
+render_shadow_benchmark_minimum_size (negative: as configured) */
+long config_integer(const char *name);
+static long shadow_minimum_size_override = -1;
+static long shadow_minimum_size = 0;
+#define MAXIMUM_SHADOW_EXEMPT_ROOTS (2 * MAXIMUM_LOCAL_PLAYERS)
+static long shadow_exempt_roots[MAXIMUM_SHADOW_EXEMPT_ROOTS];
+static short shadow_exempt_root_count = 0;
+
+void render_shadow_benchmark_minimum_size(
+	long size)
+{
+	shadow_minimum_size_override = size;
+
+	return;
+}
+
+static long object_root_index(
+	long object_index)
+{
+	long parent_index;
+
+	while ((parent_index = object_get(object_index)->object.parent_object_index) != NONE)
+		object_index = parent_index;
+
+	return object_index;
+}
+
+static void shadow_minimum_size_begin(
+	void)
+{
+	shadow_minimum_size = shadow_minimum_size_override >= 0 ? shadow_minimum_size_override :
+		config_integer("display.shadow_minimum_size");
+	shadow_minimum_size = PIN(shadow_minimum_size, 0, 240);
+	shadow_exempt_root_count = 0;
+	if (shadow_minimum_size_pixels(shadow_minimum_size, FALSE) > OBJECT_SHADOW_MINIMUM_PIXELS)
+	{
+		short local_player_index;
+
+		for (local_player_index = local_player_get_next(NONE);
+			local_player_index != NONE && local_player_index < MAXIMUM_LOCAL_PLAYERS &&
+				shadow_exempt_root_count < MAXIMUM_SHADOW_EXEMPT_ROOTS;
+			local_player_index = local_player_get_next(local_player_index))
+		{
+			long player_index = local_player_get_player_index(local_player_index);
+			long unit_index = player_index == NONE ? NONE : player_get(player_index)->unit_index;
+
+			if (unit_index != NONE)
+				shadow_exempt_roots[shadow_exempt_root_count++] = object_root_index(unit_index);
+			/* the body a dead player's camera follows; multiplayer never
+			clears the entry, so the body may be gone */
+			if (players_globals->dead_units[local_player_index] != NONE &&
+				object_try_and_get(players_globals->dead_units[local_player_index]) &&
+				shadow_exempt_root_count < MAXIMUM_SHADOW_EXEMPT_ROOTS)
+			{
+				shadow_exempt_roots[shadow_exempt_root_count++] =
+					object_root_index(players_globals->dead_units[local_player_index]);
+			}
+		}
+	}
+
+	return;
+}
+
+/* port: the floor this object's shadow fades in above */
+static real object_shadow_minimum_pixels(
+	long object_index)
+{
+	boolean exempt = FALSE;
+
+	if (shadow_minimum_size_pixels(shadow_minimum_size, FALSE) > OBJECT_SHADOW_MINIMUM_PIXELS)
+	{
+		exempt = shadow_minimum_size_exempt(
+			object_root_index(object_index),
+			shadow_exempt_roots,
+			shadow_exempt_root_count);
+	}
+
+	return shadow_minimum_size_pixels(shadow_minimum_size, exempt);
+}
+
 static boolean shadow_batching_enabled(
 	void)
 {
@@ -454,6 +540,7 @@ void render_object_shadows(
 	{
 		struct object_render_data data;
 
+		shadow_minimum_size_begin();
 		rasterizer_environment_shadows_begin();
 
 		data.shadow = TRUE;
@@ -1389,6 +1476,16 @@ static void render_object(
 		{
 			real level_of_detail_pixels;
 			real shadow_darkness;
+			/* port: display.shadow_minimum_size */
+			real minimum_pixels = object_shadow_minimum_pixels(data->object_index);
+
+			if (minimum_pixels > OBJECT_SHADOW_MINIMUM_PIXELS &&
+				shadow_minimum_size_culled(
+					object_get_level_of_detail_pixels(data->object_index),
+					minimum_pixels))
+			{
+				return;
+			}
 
 			data->lighting = object_get_cached_render_lighting(
 				data->object_index,
@@ -1397,11 +1494,11 @@ static void render_object(
 			level_of_detail_pixels = object_get_level_of_detail_pixels(data->object_index);
 			shadow_darkness = 1.f - real_rgb_color_brightness(&data->lighting->shadow_color);
 
-			if (level_of_detail_pixels > OBJECT_SHADOW_MINIMUM_PIXELS &&
+			if (level_of_detail_pixels > minimum_pixels &&
 				shadow_darkness > OBJECT_SHADOW_MINIMUM_DARKNESS)
 			{
 				real size_fraction =
-					(level_of_detail_pixels - OBJECT_SHADOW_MINIMUM_PIXELS) * 0.06666667f;
+					shadow_minimum_size_fraction(level_of_detail_pixels, minimum_pixels);
 				real darkness_fraction =
 					(shadow_darkness - OBJECT_SHADOW_MINIMUM_DARKNESS) * 9.0909081f;
 

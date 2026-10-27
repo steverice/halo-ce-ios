@@ -119,6 +119,17 @@
             "desktop"
           ]
         },
+        "shadow_minimum_size": {
+          "type": "integer",
+          "default": 0,
+          "description": "Device-profile floor on how small a character or vehicle may look and still cast its shadow, in pixels of the 480-line picture, 0 to 240. Shadows fade out as objects shrink toward it. 0 to 30 keep the Xbox's 30. The players' own units, vehicles, fellow riders and bodies keep their shadows.",
+          "x-environment": "HALO_SHADOW_MINIMUM_SIZE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "dynamic_light_limit": {
           "type": "integer",
           "default": 0,

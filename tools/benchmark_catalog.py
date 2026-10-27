@@ -48,6 +48,7 @@ CASE_SETTINGS = {
     "display.anisotropic_filtering": ("integer", (1, 2, 4, 8, 16), 1, 16),
     "display.dynamic_light_limit": ("integer", None, 0, 128),
     "display.specular_light_limit": ("integer", None, 0, 128),
+    "display.shadow_minimum_size": ("integer", None, 0, 240),
     "display.shadow_map_size": ("integer", (128, 256, 512, 1024, 2048), 128, 2048),
     "display.model_lod": ("text", ("max", "auto")),
     "display.anti_aliasing": ("text", ("off", "fxaa", "smaa")),

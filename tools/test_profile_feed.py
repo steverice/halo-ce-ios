@@ -19,8 +19,8 @@ KEYS = ROOT / "port/linux/src/port_profile_keys.h"
 # (data_pack.py) and the directory names in ios_build.py, profile_pr.py and pages_asset_overlay.py, then record the
 # new table here.
 # Generation 2 had not shipped when PROFILE_VARIABLE was added (no release read it, no shard was signed), so its table
-# was re-recorded rather than a generation 3 opened.
-GENERATION_KEYS = {2: "346a4c403ea686861e227523bf863be7a12439e3c32ac3e557f2f0fbbcb68f76"}
+# was re-recorded rather than a generation 3 opened, and again for display.shadow_minimum_size (still unreleased).
+GENERATION_KEYS = {2: "6a4fb7669346d05409e78d6bf38c08123257bb66555ea9dfa340a7970f655888"}
 
 
 def key_table_sha256(text):

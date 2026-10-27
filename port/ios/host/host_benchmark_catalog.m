@@ -177,6 +177,9 @@ static BOOL case_settings(id raw, unsigned *sim_experiments, unsigned *sim_exper
         } else if ([name isEqual:@"display.specular_light_limit"]) {
             if (!integer_number(value, 0, 128, &number)) return NO;
             knobs->mask |= BENCHMARK_KNOB_SPECULAR_LIGHTS; knobs->specular_light_limit = number;
+        } else if ([name isEqual:@"display.shadow_minimum_size"]) {
+            if (!integer_number(value, 0, 240, &number)) return NO;
+            knobs->mask |= BENCHMARK_KNOB_SHADOW_MINIMUM; knobs->shadow_minimum_size = number;
         } else if ([name isEqual:@"display.shadow_map_size"]) {
             if (!integer_number(value, 128, 2048, &number) || ![@[@128, @256, @512, @1024, @2048] containsObject:@(number)]) return NO;
             knobs->mask |= BENCHMARK_KNOB_SHADOW; knobs->shadow_size = number;

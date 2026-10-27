@@ -73,6 +73,13 @@
           "default": 512,
           "description": "The size of the textures characters' and vehicles' shadows are drawn into, 128 (as on the Xbox) to 2048: larger is smoother. Profile values outside the accepted set are refused, not clamped."
         },
+        "shadow_minimum_size": {
+          "type": "integer",
+          "minimum": 0.0,
+          "maximum": 240.0,
+          "default": 0,
+          "description": "Device-profile floor on how small a character or vehicle may look and still cast its shadow, in pixels of the 480-line picture, 0 to 240. Shadows fade out as objects shrink toward it. 0 to 30 keep the Xbox's 30. The players' own units, vehicles, fellow riders and bodies keep their shadows. Profile values outside the accepted set are refused, not clamped."
+        },
         "effect_resolution": {
           "type": "string",
           "enum": [
@@ -1600,6 +1607,50 @@
           ]
         },
         "variable.display.shadow_map_size": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.shadow_minimum_size": {
           "type": "object",
           "properties": {
             "basis": {

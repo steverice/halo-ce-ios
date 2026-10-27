@@ -150,6 +150,11 @@ static const struct config_setting config_settings[] =
 		"world, and in stereo lay one eye's shadows in the other too: the picture's\n"
 		"pass is no longer interrupted for each shadow. False keeps the Xbox's\n"
 		"order, to compare." },
+	{ "display.shadow_minimum_size", _config_integer, "0", "HALO_SHADOW_MINIMUM_SIZE", _environment_value, _platform_all,
+		"Device-profile floor on how small a character or vehicle may look and still\n"
+		"cast its shadow, in pixels of the 480-line picture, 0 to 240. Shadows fade\n"
+		"out as objects shrink toward it. 0 to 30 keep the Xbox's 30. The players'\n"
+		"own units, vehicles, fellow riders and bodies keep their shadows." },
 	{ "display.dynamic_light_limit", _config_integer, "0", "HALO_DYNAMIC_LIGHT_LIMIT", _environment_value, _platform_all,
 		"Device-profile cap on dynamic lights illuminating level surfaces, 0 to 128.\n"
 		"Zero keeps all lights; first-person weapon lights are always retained.\n"

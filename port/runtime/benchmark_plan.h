@@ -40,7 +40,8 @@ enum { BENCHMARK_KNOB_LINES = 1, BENCHMARK_KNOB_ANISOTROPY = 2, BENCHMARK_KNOB_S
     BENCHMARK_KNOB_ANTI_ALIASING = 16, BENCHMARK_KNOB_EFFECT = 32,
     BENCHMARK_KNOB_RENDER_SCALE = 128, BENCHMARK_KNOB_CLUTTER_DISTANCE = 256, BENCHMARK_KNOB_CLUTTER_LOD = 512,
     BENCHMARK_KNOB_WALL_SECONDS = 1024,
-    BENCHMARK_KNOB_FRAME_RATE = 2048, BENCHMARK_KNOB_DYNAMIC_LIGHTS = 4096, BENCHMARK_KNOB_SPECULAR_LIGHTS = 8192 };
+    BENCHMARK_KNOB_FRAME_RATE = 2048, BENCHMARK_KNOB_DYNAMIC_LIGHTS = 4096, BENCHMARK_KNOB_SPECULAR_LIGHTS = 8192,
+    BENCHMARK_KNOB_SHADOW_MINIMUM = 16384 };
 struct benchmark_knobs {
     unsigned mask;
     long lines, anisotropy, shadow_size;
@@ -52,6 +53,7 @@ struct benchmark_knobs {
     int clutter_lowest_lod;    /* debug.clutter_lowest_lod */
     double wall_seconds;       /* debug.offscreen_window_wall_seconds; read by the host only */
     long dynamic_light_limit, specular_light_limit;
+    long shadow_minimum_size;  /* display.shadow_minimum_size */
     long frame_rate;           /* display.frame_rate, frames a second (host_frame_rate_override) */
 };
 

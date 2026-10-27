@@ -121,3 +121,13 @@ grade = {"8" = "obvious", "4" = "obvious"}
 [tv."display.specular_light_limit"]
 order = ["0", "2", "1"]
 grade = {"2" = "obvious", "1" = "obvious"}
+
+# Small and distant characters and vehicles lose their shadows, fading out first; grades are assumed.
+
+[handheld."display.shadow_minimum_size"]
+order = ["0", "45", "60", "90"]
+grade = {"45" = "barely", "60" = "barely", "90" = "obvious"}
+
+[tv."display.shadow_minimum_size"]
+order = ["0", "45", "60", "90"]
+grade = {"45" = "barely", "60" = "obvious", "90" = "obvious"}

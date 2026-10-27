@@ -130,6 +130,7 @@ DEFAULTS = {
     "display.shadow_map_size": "128",
     "display.dynamic_light_limit": "0",
     "display.specular_light_limit": "0",
+    "display.shadow_minimum_size": "0",
     "display.effect_resolution": '"xbox"',
     "display.compressed_textures": "false",
     "debug.texture_astc": '"off"',

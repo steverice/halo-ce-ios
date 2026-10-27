@@ -81,6 +81,8 @@ void halo_benchmark_knobs(int anti_aliasing, int effect_level, double render_sca
 void halo_benchmark_clutter(double distance, int lowest_lod);
 /* source/objects/object_lights.c: render-only caps; -1 restores the profile value. */
 void lights_port_benchmark_limits(long dynamic, long specular);
+/* source/render/render_objects.c: display.shadow_minimum_size a cost run sets; -1 restores the configured value */
+void render_shadow_benchmark_minimum_size(long size);
 void halo_benchmark_override_state(long *render_lines, long *shadow_size, long *anisotropy);
 void halo_benchmark_renderer_observations_reset(void);
 void halo_benchmark_renderer_observations(long *shadow_target_size, long *anisotropic_sampler_max);
@@ -132,7 +134,7 @@ static struct
 	int knob_anti_aliasing, knob_effect_level;
 	double knob_render_scale, knob_clutter_distance;
 	int knob_clutter_lowest_lod;
-	long knob_dynamic_lights, knob_specular_lights;
+	long knob_dynamic_lights, knob_specular_lights, knob_shadow_minimum;
 	char mp_simulation[32], mp_game_mode[16];
 	int mp_players, mp_views, mp_score_limit, mp_time_limit_minutes;
 	struct benchmark_mp_arena_config mp_arena;
@@ -634,6 +636,7 @@ static void next_run(void)
 		halo_benchmark_knobs(-1, -1, 0.0);
 		halo_benchmark_clutter(-1.0, -1);
 		lights_port_benchmark_limits(-1, -1);
+		render_shadow_benchmark_minimum_size(-1);
 		halo_model_lod_set(-1);
 		benchmark_scenario_load("", "");
 		input_replay_suite_restore();
@@ -668,6 +671,7 @@ static void next_run(void)
 	suite.knob_render_scale = number_field(text, "knob_scale");
 	suite.knob_dynamic_lights = field(text, "knob_dynamic_lights", (char[16]){0}, 16) ? (long)number_field(text, "knob_dynamic_lights") : -1;
 	suite.knob_specular_lights = field(text, "knob_specular_lights", (char[16]){0}, 16) ? (long)number_field(text, "knob_specular_lights") : -1;
+	suite.knob_shadow_minimum = field(text, "knob_shadow_minimum", (char[16]){0}, 16) ? (long)number_field(text, "knob_shadow_minimum") : -1;
 	suite.knob_clutter_distance = field(text, "knob_clutter", (char[16]){0}, 16) ? number_field(text, "knob_clutter") : -1.0;
 	suite.knob_clutter_lowest_lod = field(text, "knob_clutter_lod", (char[8]){0}, 8) ? (int)number_field(text, "knob_clutter_lod") : -1;
 	suite.lead = number_field(text, "lead");
@@ -743,6 +747,7 @@ static void next_run(void)
 	halo_benchmark_knobs(suite.knob_anti_aliasing, suite.knob_effect_level, suite.knob_render_scale);
 	halo_benchmark_clutter(suite.knob_clutter_distance, suite.knob_clutter_lowest_lod);
 	lights_port_benchmark_limits(suite.knob_dynamic_lights, suite.knob_specular_lights);
+	render_shadow_benchmark_minimum_size(suite.knob_shadow_minimum);
 	halo_model_lod_set(suite.model_lod_max);
 	halo_benchmark_renderer_observations_reset();
 	texture_replacement_selections = 0;
