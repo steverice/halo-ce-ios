@@ -13,6 +13,8 @@ waits for it unless the player skips. One texture at a time; the manifest is the
 #import "host_texture_upscale.h"
 #import "host_astc_store.h"
 #include "host_config.h"
+#include <pthread/qos.h>
+#include "texture_upscale_priority.h"
 #include "ios_host.h"
 #include "texture_cache.h"
 #include "texture_record.h"
@@ -346,15 +348,19 @@ static void log_texture_error(const struct texture_policy_decision *d,const char
     save_log();export_table();
 }
 }
-/* Every core, at most eight; half of them from serious thermal state on. */
+/* Every core, at most eight, while a wait is on screen; half of them otherwise and from serious thermal state on. */
 static unsigned encoder_threads(void) {
-    unsigned cores=(unsigned)MIN(MAX(NSProcessInfo.processInfo.activeProcessorCount,1),8);
-    return NSProcessInfo.processInfo.thermalState>=NSProcessInfoThermalStateSerious?MAX(cores/2,1):cores;
+    return texture_upscale_priority_threads((unsigned)NSProcessInfo.processInfo.activeProcessorCount,atomic_load(&urgent),
+        NSProcessInfo.processInfo.thermalState>=NSProcessInfoThermalStateSerious);
 }
+/* The pump and the finisher are long-lived blocks, so the priority they were queued at is not the priority to keep:
+   each texture sets its thread's again from whether a wait is on screen now (texture_upscale_priority.h). */
+static void follow_priority(void) { pthread_set_qos_class_self_np(texture_upscale_priority_qos(atomic_load(&urgent)),0); }
 struct generation_context { const struct texture_policy_decision *decision; BOOL found,failed; };
 static int generate_source(void *opaque,const struct host_texture_source *source) {
     struct generation_context *context=opaque;const struct texture_policy_decision *d=context->decision;
     if(source->hash!=d->hash||source->width!=d->width||source->height!=d->height)return !atomic_load(&upscale_playing);
+    follow_priority();
     context->found=YES;
     if(atomic_load(&upscale_playing)){context->failed=YES;return 0;}
     enum texture_upscale_alpha alpha=TEXTURE_UPSCALE_ALPHA_NONE;BOOL binary=YES;
@@ -429,6 +435,7 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     dispatch_async(finisher,^{@autoreleasepool {
       void (^finish)(void)=^{
         const struct texture_policy_decision *d=&decision;
+        follow_priority();
         texture_upscale_encode_set_cancel(&stop_flag);
         atomic_store(&work_hash,decision.hash);atomic_store(&work_stage,"refinement, measures and compression");
         /* gameplay began while the predictions ran: nothing more, the texture is made later */
@@ -616,9 +623,9 @@ static void pump(void) {
                     if(!atomic_load(&upscale_playing))schedule_pump();});}
     }
 }
-/* A user-initiated block on the worker's serial queue raises the pump already running there to that priority. */
-static void boost(void) { if(upscale_worker)dispatch_async(upscale_worker,dispatch_block_create_with_qos_class(DISPATCH_BLOCK_ENFORCE_QOS_CLASS,QOS_CLASS_USER_INITIATED,0,^{})); }
-/* One pump at a time; at user-initiated priority while the import phase or a level's wait is on screen. */
+/* (a wait that begins while a pump runs raises it at the pump's next texture: follow_priority. A user-initiated block queued
+   behind the pump would raise the whole pump, backlog and all, until it ended.) */
+/* One pump at a time; queued at user-initiated priority while the import phase or a level's wait is on screen (and kept in step per texture: follow_priority). */
 static void schedule_pump(void) {
     if(!upscale_enabled)return;
     atomic_store(&pump_requested,true);
@@ -801,7 +808,7 @@ int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_pr
     if(!upscale_enabled)return 0;
     atomic_fetch_add(&urgent,1);
     unsigned ended=atomic_load(&pumps_ended);
-    host_texture_upscale_scan();boost();
+    host_texture_upscale_scan();
     /* the player is on the import's phase: iOS 26 may carry it on if they switch away */
     host_texture_upscale_continued_phase(1);
     double start=now();BOOL skipped=NO,menu_checked=NO,menu_logged=NO;NSData *menu_keys=nil;
@@ -863,7 +870,7 @@ int host_texture_upscale_level_begin(const char *name) {
     @synchronized(activity_token){level_name=priority_name;texture_upscale_activity_map_will_load(&activity);}
     atomic_store(&level_serial,atomic_load(&priority_serial));
     atomic_store(&level_pumps,atomic_load(&pumps_ended));
-    set_stop(NO);schedule_pump();boost();
+    set_stop(NO);schedule_pump();
     return 1;
 }
 int host_texture_upscale_level_poll(unsigned long long *done,unsigned long long *total) {

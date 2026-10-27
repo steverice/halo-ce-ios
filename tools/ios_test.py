@@ -677,6 +677,10 @@ run(BUILD/'texture-upscale-schedule-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/runtime',
     'port/ios/tests/texture_upscale_continued_probe.c', '-o', BUILD/'texture-upscale-continued-probe')
 run(BUILD/'texture-upscale-continued-probe')
+# how hard the on-device upscaler works while no one waits for it (port/runtime/texture_upscale_priority.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/runtime',
+    'port/ios/tests/texture_upscale_priority_probe.c', '-o', BUILD/'texture-upscale-priority-probe')
+run(BUILD/'texture-upscale-priority-probe')
 # the host's write of one setting into config.toml, for the Settings app's switch (port/ios/host/host_config.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host', 'port/ios/tests/host_config_write_probe.c',
     'port/ios/host/host_config.c', '-o', BUILD/'host-config-write-probe')
