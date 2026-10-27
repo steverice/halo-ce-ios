@@ -99,7 +99,8 @@ static const char *config_string(const char *name) {
     return !strcmp(name, "game.loading_screen") ? "on" : "";
 }
 static void platform_log(const char *format, ...) { (void)format; }
-static short main_get_solo_level_from_name(const char *name) { (void)name; return 0; }
+static int network_map;
+static short main_get_solo_level_from_name(const char *name) { (void)name; return network_map ? NONE : 0; }
 static void progress_bar_begin(int loaded) { (void)loaded; bar_active = 1; }
 static void progress_bar_end(void) { bar_active = 0; }
 static int progress_bar_is_active(void) { return bar_active; }
@@ -196,6 +197,36 @@ int main(void) {
     halo_loading_screen_finish();
     assert(!complete_later && !halo_loading_screen_tail() && !bar_active);
     assert(maximum_drawn < 0.9f);
+    /* A network game's map: no solo level, a multiplayer scenario. The hold waits
+       for outstanding compiles, has no tail, and ends the screen. */
+    last_t = maximum_drawn = 0;
+    minimum = 0;
+    scenario.type = 2;
+    network_map = 1;
+    halo_loading_screen_begin_network("beavercreek");
+    assert(bar_active && loading_screen.network);
+    later_token = metal_compile_progress_schedule(&batch);
+    complete_at = now + 700;
+    complete_later = 1;
+    gpu_compile_progress(GPU_COMPILE_PROGRESS_SEAL, &(struct gpu_compile_progress){0});
+    began = now;
+    halo_loading_screen_finish();
+    assert(!complete_later && now - began >= 700);
+    assert(!halo_loading_screen_tail() && !loading_screen.active && !bar_active);
+    /* compiles that never finish end a network hold after its limit, not the campaign's 60 s */
+    last_t = 0;
+    halo_loading_screen_begin_network("beavercreek");
+    metal_compile_progress_schedule(&batch);
+    gpu_compile_progress(GPU_COMPILE_PROGRESS_SEAL, &(struct gpu_compile_progress){0});
+    began = now;
+    halo_loading_screen_finish();
+    assert(now - began >= NETWORK_HOLD_MILLISECONDS && now - began < NETWORK_HOLD_MILLISECONDS + 1000);
+    assert(!loading_screen.active && !bar_active);
+    /* a failed network load cancels at once */
+    last_t = 0;
+    halo_loading_screen_begin_network("beavercreek");
+    halo_loading_screen_cancel();
+    assert(!loading_screen.active && !bar_active);
     puts("PASS: actual loading controller: measured progress, early completions, cache, failure and readiness tail");
     return 0;
 }

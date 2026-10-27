@@ -785,6 +785,10 @@ boolean network_game_create_game_objects(
 			break;
 	}
 
+	/* port: the loading screen stands over the lobby's last frame until the
+	level is read and its shaders and pipelines are compiled
+	(port/linux/game/loading_screen.c) */
+	halo_loading_screen_begin_network(options.map_name);
 	game_precache_new_map(options.map_name, TRUE);
 	main_menu_unload();
 
@@ -838,6 +842,13 @@ boolean network_game_create_game_objects(
 	{
 		error(0, "game_load() failed.");
 	}
+
+	/* port: the level has loaded, so the screen holds for the compiles still
+	running; a load that failed ends it at once */
+	if (game->local_data.game_objects_loaded)
+		halo_loading_screen_finish();
+	else
+		halo_loading_screen_cancel();
 
 	return game->local_data.game_objects_loaded;
 }

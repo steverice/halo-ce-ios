@@ -52,6 +52,17 @@ still once they have, and the displayed value eases the rest of the way to
 1, where the picture and the blur have faded to black, as the original's
 do. The level's first frame follows that.
 
+A network game's map (host and clients alike) loads through the lobby, in
+network_game_create_game_objects, not through main_change_map_name. That load
+holds the screen the same way (halo_loading_screen_begin_network, over the
+lobby's last frame, and halo_loading_screen_finish after the shader list's
+warmup), so the first frame of a multiplayer level is not drawn while the
+pipelines for its sky and structure are still compiling, which left the fog
+color on screen with the level filling in over the next frames. It has no tail
+(there is no opening cutscene) and no wait for upscaled textures, and it gives
+up after NETWORK_HOLD_MILLISECONDS, since the network game's other machines
+wait for this one.
+
 On a device that makes upscaled textures (port/ios/host/host_texture_upscale.m),
 halo_loading_screen_begin then waits, drawing the screen, while the level's
 textures that are not upscaled yet are made ("Upscaling assets", A skips).
@@ -121,6 +132,8 @@ enum
 #define END_EASE_SECONDS 0.1f
 /* the shortest run from the loaded level to the end of the compiles' range */
 #define RUN_MILLISECONDS 600
+/* a network game's hold ends after this long, however many compiles are left: the machines waiting for this one go on */
+#define NETWORK_HOLD_MILLISECONDS 5000
 /* the tail gives up after this long, however far the level's ticks have got */
 #define TAIL_MAXIMUM_MILLISECONDS 3000
 /* the level's ticks the tail waits for: three start the opening cutscene
@@ -133,6 +146,7 @@ static struct
 	boolean active;        /* from begin to the end of finish */
 	boolean holding;       /* finish's loop: the level is loaded and waits */
 	boolean tail;          /* the level's first ticks run behind the screen */
+	boolean network;       /* a network game's map (no tail, no upscale wait, a bounded hold) */
 	unsigned long tail_started;
 	unsigned long tail_frozen; /* system_milliseconds when game time stood still */
 	unsigned long started; /* system_milliseconds at begin */
@@ -260,32 +274,64 @@ boolean halo_loading_screen_upscale_note(real *fraction)
 	return TRUE;
 }
 
-void halo_loading_screen_begin(char const *map_name)
+static void loading_screen_start(char const *map_name, boolean network)
 {
 	double seconds = config_real("game.loading_screen_seconds");
 	struct gpu_compile_progress compiles;
 
-	/* (the campaign's own levels; a multiplayer map loads through the network
-	game's lobby, and a Custom Edition level starts as before) */
-	if (loading_screen.active || main_get_solo_level_from_name(map_name) == NONE || !loading_screen_wanted())
-		return;
 	if (seconds < 0.0)
 		seconds = 0.0;
 	if (seconds > 30.0)
 		seconds = 30.0;
 	memset(&loading_screen, 0, sizeof(loading_screen));
 	loading_screen.active = TRUE;
+	loading_screen.network = network;
 	loading_screen.started = system_milliseconds();
 	loading_screen.minimum = (unsigned long)(seconds * 1000.0);
 	/* Register jobs before the map's warmup can dispatch or finish them. */
 	gpu_compile_progress(GPU_COMPILE_PROGRESS_BEGIN, &compiles);
-	platform_log("loading screen: %s, at least %.1f s", map_name, seconds);
+	platform_log("loading screen: %s%s, at least %.1f s", network ? "network game " : "", map_name, seconds);
 	/* over the last frame (a map is loaded: the menu's or the level left) */
 	progress_bar_begin(global_scenario_index != NONE);
 	loading_screen_frame();
 #ifdef HALO_IOS
-	loading_screen_upscale_wait(map_name);
+	if (!network)
+		loading_screen_upscale_wait(map_name);
 #endif
+}
+
+void halo_loading_screen_begin(char const *map_name)
+{
+	/* (the campaign's own levels; a network game's map has its own entry,
+	halo_loading_screen_begin_network, and a Custom Edition level starts as
+	before) */
+	if (loading_screen.active || main_get_solo_level_from_name(map_name) == NONE || !loading_screen_wanted())
+		return;
+	loading_screen_start(map_name, FALSE);
+}
+
+/* a network game's map loads (network_game_create_game_objects), on the host
+and on each client, through the lobby: the screen stands over the lobby's
+last frame until game_load has read the level and the shaders and pipelines
+it needs are compiled, so no frame shows the level with its draws missing */
+void halo_loading_screen_begin_network(char const *map_name)
+{
+	if (loading_screen.active || !loading_screen_wanted())
+		return;
+	loading_screen_start(map_name, TRUE);
+}
+
+/* a network game's load failed: the screen ends without waiting */
+void halo_loading_screen_cancel(void)
+{
+	struct gpu_compile_progress compiles;
+
+	if (!loading_screen.active || !loading_screen.network)
+		return;
+	gpu_compile_progress(GPU_COMPILE_PROGRESS_END, &compiles);
+	loading_screen.active = FALSE;
+	loading_screen.holding = FALSE;
+	progress_bar_end();
 }
 
 /* whether the loading screen is up, and the progress it draws
@@ -400,7 +446,7 @@ void halo_loading_screen_finish(void)
 	last_change = loaded;
 	/* (only a campaign level waits: a failed load that fell back to the
 	menus' map ends the screen at once) */
-	loading_screen.holding = scenario && scenario->type == _scenario_type_solo;
+	loading_screen.holding = scenario && (loading_screen.network || scenario->type == _scenario_type_solo);
 	while (loading_screen.holding)
 	{
 		outstanding = gpu_compiles_outstanding();
@@ -410,6 +456,12 @@ void halo_loading_screen_finish(void)
 		{
 			last_outstanding = outstanding;
 			last_change = now;
+		}
+		else if (loading_screen.network && now - loaded > NETWORK_HOLD_MILLISECONDS)
+		{
+			platform_log("loading screen: %lu compiles still running after %d ms; starting the network game",
+				outstanding, NETWORK_HOLD_MILLISECONDS);
+			break;
 		}
 		else if (outstanding && now - last_change > STALLED_MILLISECONDS)
 		{
@@ -440,7 +492,7 @@ void halo_loading_screen_finish(void)
 	loading_screen.holding = FALSE;
 	/* the tail: the screen goes on over the level's first ticks (a campaign
 	level that loaded, not one that fell back to the menus) */
-	if (scenario && scenario->type == _scenario_type_solo && outstanding == 0 && !compiles.failed && game_in_progress())
+	if (!loading_screen.network && scenario && scenario->type == _scenario_type_solo && outstanding == 0 && !compiles.failed && game_in_progress())
 	{
 		loading_screen.tail = TRUE;
 		loading_screen.tail_started = now ? now : 1;

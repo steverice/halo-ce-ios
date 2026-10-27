@@ -89,6 +89,8 @@ finished at the end of main_new_map; its progress for render_frame_pregame,
 and whether a loaded level waits behind it */
 void halo_loading_screen_begin(char const *map_name);
 void halo_loading_screen_finish(void);
+void halo_loading_screen_begin_network(char const *map_name);
+void halo_loading_screen_cancel(void);
 unsigned char halo_loading_screen_progress(float *progress);
 unsigned char halo_loading_screen_holding(void);
 unsigned char halo_loading_screen_tail(void);
