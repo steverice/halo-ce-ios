@@ -377,6 +377,14 @@ NSString *host_data_updates_latest_newer(void)
     @synchronized(selectionLock()) { return latestNewerVersion; }
 }
 
+/* "Downloading benchmark recordings…" plus a percentage, or megabytes when the server announced no size. */
+static NSString *recordingProgressText(void)
+{
+    uint64_t received = recordings.downloadReceived, expected = recordings.downloadExpected;
+    if (!received) return @"Downloading benchmark recordings…";
+    if (expected >= received) return [NSString stringWithFormat:@"Downloading benchmark recordings… %u%%", (unsigned)(received * 100 / expected)];
+    return [NSString stringWithFormat:@"Downloading benchmark recordings… %.1f MB", received / 1000000.0];
+}
 static void publishMenuState(void)
 {
     @synchronized(selectionLock()) {
@@ -531,7 +539,9 @@ static void refreshMenuKinds(BOOL profile, BOOL recording)
     }
     if (recording && menuRecordingURL && !recordingChecking) {
         recordingChecking = YES;
-        @synchronized(selectionLock()) { if (!menuFrozen && !recordingAttempted) recordingLoading = YES; }
+        // Unlike the profile retry, every recording attempt shows "Downloading" (with progress): the catalog is large and slow
+        // links need several minutes, so a quiet retry would read as "unavailable" while the download is running.
+        @synchronized(selectionLock()) { if (!menuFrozen && !recordingReady) recordingLoading = YES; }
         recordingAttempted = YES;
         checkLatest();
         [recordings checkForUpdateAtURL:menuRecordingURL completion:^(BOOL success) {
@@ -674,7 +684,12 @@ void host_data_updates_menu_start(void)
 NSDictionary *host_data_updates_menu_state(void)
 {
     @synchronized(selectionLock()) {
-        return menuState ?: @{@"ready": @NO, @"loading": @YES, @"reason": @""};
+        if (!menuState) return @{@"ready": @NO, @"loading": @YES, @"reason": @""};
+        // Progress changes with every chunk, so it is read here rather than published with the state.
+        if (![menuState[@"loading"] boolValue] || !recordingLoading) return menuState;
+        NSMutableDictionary *live = [menuState mutableCopy];
+        live[@"progress"] = recordingProgressText();
+        return live;
     }
 }
 void host_data_updates_menu_finish(void)

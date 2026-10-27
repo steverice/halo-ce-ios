@@ -170,11 +170,16 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
 @property(nonatomic, copy) NSString *mapName;
 @property(nonatomic) NSUInteger transferBytes;
 @property(atomic, readwrite) NSInteger lastFeedStatus;
+@property(atomic, readwrite) uint64_t downloadReceived, downloadExpected;
+@property(atomic, readwrite) NSTimeInterval resourceTimeout;
 @property(atomic, readwrite) BOOL lastFeedSuperseded;
 @property(nonatomic) BOOL statusRefused;
 @end
 
 @implementation HostDataPackStore
+// A recording catalog is about 16 MB on the wire (63 MB decoded) and was cut off by the 30 s limit on slower links,
+// each retry starting over. The stall limit (timeoutIntervalForRequest) still ends a dead connection in 20 s.
++ (NSTimeInterval)resourceTimeoutForKind:(NSString *)kind { return [kind isEqual:@"recordings"] ? 900 : 30; }
 // The envelope is parsed before its signature is checked, so these bounds are also what an unauthenticated feed
 // can make the app hold. The payload's files are base64 inside the payload, which is base64 again in the envelope:
 // Recording bounds follow the maximum individually valid files, without a separate library-size cap.
@@ -549,7 +554,9 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
     configuration.URLCache = nil; configuration.HTTPCookieStorage = nil; configuration.URLCredentialStorage = nil;
-    configuration.HTTPShouldSetCookies = NO; configuration.HTTPAdditionalHeaders = @{}; configuration.timeoutIntervalForRequest = 10; configuration.timeoutIntervalForResource = 30;
+    configuration.HTTPShouldSetCookies = NO; configuration.HTTPAdditionalHeaders = @{}; configuration.timeoutIntervalForRequest = [_kind isEqual:@"recordings"] ? 20 : 10;
+    configuration.timeoutIntervalForResource = [HostDataPackStore resourceTimeoutForKind:_kind]; self.resourceTimeout = configuration.timeoutIntervalForResource;
+    self.downloadReceived = 0; self.downloadExpected = 0;
     configuration.waitsForConnectivity = NO;
     _feedURL = url; _transferBytes = 0; _indexEnvelope = nil; _indexPack = nil; _mapFiles = nil; _mapName = nil;
     _download = [NSMutableData data]; _responseAccepted = NO; _responseValidator = nil;
@@ -605,6 +612,11 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     NSUInteger totalLimit = self.shaderIndex ? HOST_SHADER_PACK_MAX_INDEX_BYTES + HOST_SHADER_PACK_MAX_COMPRESSED_TOTAL_BYTES : self.envelopeLimit;
     if (!_responseAccepted || data.length > self.downloadLimit - _download.length || data.length > totalLimit - _transferBytes) { _responseAccepted = NO; [_download setLength:0]; [task cancel]; return; }
     _transferBytes += data.length; [_download appendData:data];
+    if (!_mapName) {
+        int64_t expected = task.countOfBytesExpectedToReceive, received = task.countOfBytesReceived;
+        self.downloadExpected = expected > 0 ? (uint64_t)expected : 0;
+        self.downloadReceived = received > 0 ? (uint64_t)received : _transferBytes;
+    }
 } }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error { @synchronized(self) {
     (void)task;
@@ -635,6 +647,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
             if (_responseValidator) [[NSString stringWithFormat:@"%@\n%@", _state[@"highest"], _responseValidator] writeToFile:self.validatorPath atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         } else host_logf(HOST_LOG_WARN, "data-packs: %s feed not staged (%s); keeping the current snapshot", _kind.UTF8String, stageError.localizedDescription.UTF8String);
     }
+    self.downloadReceived = 0; self.downloadExpected = 0;
     void (^completion)(BOOL) = _updateCompletion;
     BOOL success = staged || _notModified;
     _updateCompletion = nil;

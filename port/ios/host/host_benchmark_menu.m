@@ -453,7 +453,8 @@ static UIFont *menuFont(UIFontTextStyle style, UITraitCollection *traits, CGFloa
 #if TARGET_OS_VISION
     self.disabledBenchmarkTitle.hidden = ready;
 #endif
-    NSString *status = ready ? @"" : loading ? @"Downloading benchmark data…" :
+    NSString *progress = state[@"progress"];
+    NSString *status = ready ? @"" : loading ? (progress.length ? progress : @"Downloading benchmark data…") :
         reason.length ? reason : @"Benchmark data is unavailable";
     self.benchmarkStatus.text = status;
     self.benchmarkButton.accessibilityLabel = ready ? @"Benchmark" : [@"Benchmark. " stringByAppendingString:status];

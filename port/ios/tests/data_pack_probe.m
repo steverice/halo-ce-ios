@@ -320,11 +320,30 @@ int main(int argc, const char **argv) { @autoreleasepool {
             if ([state[@"pending"] length]) break;
             [NSThread sleepForTimeInterval:0.01];
         }
+        CHECK(largeStore.resourceTimeout >= 300, "a recording download gets minutes, not the 30 s of the small feeds");
+        CHECK([HostDataPackStore resourceTimeoutForKind:@"profiles"] == 30 && [HostDataPackStore resourceTimeoutForKind:@"latest"] == 30,
+            "small feeds keep the short resource limit");
+        for (int attempt = 0; attempt < 500 && (largeStore.downloadReceived || largeStore.downloadExpected); attempt++) [NSThread sleepForTimeInterval:0.01];
+        CHECK(!largeStore.downloadReceived && !largeStore.downloadExpected, "download progress resets when the check ends");
         NSString *generation = [largeStore beginLaunch];
         CHECK(![generation isEqual:@"/bundled"], "large recording pack downloads, verifies and activates");
         CHECK([NSData dataWithContentsOfFile:[generation stringByAppendingPathComponent:@"large-3.input"]].length == 3600000,
             "large recording file survives activation");
         [largeStore markHealthy];
+        // Keep the last good catalog: a later download that times out leaves it selected and staged.
+        networkFails = YES;
+        NSInteger before = requests;
+        [largeStore checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/recordings.json"]];
+        for (int attempt = 0; attempt < 300 && requests == before; attempt++) [NSThread sleepForTimeInterval:0.01];
+        [NSThread sleepForTimeInterval:0.3];
+        HostDataPackStore *again = [[HostDataPackStore alloc] initWithRoot:recordingRoot bundled:@"/bundled"
+            kind:@"recordings" channel:@"stable" publicKey:[NSData dataWithBytes:publicKey length:32]
+            compatibility:compatibility validator:^BOOL(NSString *folder, NSError **error) {
+                (void)error;
+                return [[NSFileManager defaultManager] fileExistsAtPath:[folder stringByAppendingPathComponent:@"large-3.input"]];
+            }];
+        CHECK([[again beginLaunch] isEqual:generation], "a timed-out recording download keeps the last good catalog in use");
+        networkFails = NO;
         [[NSFileManager defaultManager] removeItemAtPath:recordingRoot error:NULL];
         networkEnvelope = nil;
     }

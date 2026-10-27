@@ -118,6 +118,13 @@ int main(int argc, char **argv)
         profileReady = NO; profileLoading = NO; recordingLoading = YES; publishMenuState();
         assert(![host_data_updates_menu_state()[@"loading"] boolValue]);
         assert([host_data_updates_menu_state()[@"reason"] isEqual:@"Can't reach the profile server. Benchmarking disabled."]);
+        // A recording download in flight shows "Downloading benchmark recordings…", not "unavailable".
+        profileReady = YES; recordingReady = NO; recordingLoading = YES; publishMenuState();
+        assert([host_data_updates_menu_state()[@"loading"] boolValue]);
+        assert([host_data_updates_menu_state()[@"progress"] isEqual:@"Downloading benchmark recordings…"]);
+        recordingLoading = NO; publishMenuState();
+        assert([host_data_updates_menu_state()[@"reason"] isEqual:@"Benchmark recordings are unavailable"]);
+        profileReady = NO; recordingReady = YES;
         // Play can freeze the bundled selection between the worker's two publication locks.
         profiles = pack; menuRequested = YES;
         blockedPath = file; readEntered = dispatch_semaphore_create(0); resumeRead = dispatch_semaphore_create(0);
