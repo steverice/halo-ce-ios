@@ -224,6 +224,22 @@ static real pow1(
 	return exponent != 1.f ? pow(value, exponent) : value;
 }
 
+/* port: display.light_volume_batching (on by default): a light volume's
+sprites, which share their texture and state, are one draw instead of a draw
+each (rasterizer_widget_sprite3d_batch_begin); false draws each on its own, to
+compare */
+boolean config_boolean(const char *name);
+
+static boolean light_volume_batching_enabled(
+	void)
+{
+	static int enabled = -1;
+
+	if (enabled < 0)
+		enabled = config_boolean("display.light_volume_batching") != FALSE;
+	return enabled != 0;
+}
+
 void light_volume_render(
 	long object_index,
 	long light_volume_index)
@@ -281,6 +297,9 @@ void light_volume_render(
 					definition->map.index,
 					definition->sequence_index);
 				count = definition->count;
+				/* port: (light volume batching) the volume's sprites as one draw */
+				if (light_volume_batching_enabled())
+					rasterizer_widget_sprite3d_batch_begin();
 				for (sprite_index = 0; sprite_index < count; sprite_index++)
 				{
 					real offset_fraction = pow1((real)sprite_index / (real)(count - 1), frame->offset_exponent);
@@ -315,6 +334,7 @@ void light_volume_render(
 						0.0f,
 						real_argb_color_to_pixel32(&color));
 				}
+				rasterizer_widget_sprite3d_batch_end(); /* port: (light volume batching) */
 				rasterizer_widget_end();
 			}
 		}

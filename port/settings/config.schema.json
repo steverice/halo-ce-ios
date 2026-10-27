@@ -108,6 +108,17 @@
             "desktop"
           ]
         },
+        "light_volume_batching": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw the sprites of a light volume (a glow drawn as a row of sprites along an object's marker) in one draw rather than one draw a sprite: the same picture for less CPU time. False draws each on its own, to compare.",
+          "x-environment": "HALO_LIGHT_VOLUME_BATCHING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "shadow_batching": {
           "type": "boolean",
           "default": true,

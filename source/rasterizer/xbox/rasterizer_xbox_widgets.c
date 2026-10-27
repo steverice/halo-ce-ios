@@ -165,6 +165,11 @@ extern struct pixel_shader_definition pixel_shader;
 
 static boolean warned_about_too_many_transparent_geometry_groups;
 
+/* port: (light volume batching) between rasterizer_widget_sprite3d_batch_begin
+and _end, each sprite is a quad of one immediate-mode quad list instead of a
+triangle fan of its own */
+static boolean widget_sprite3d_batch_open = FALSE;
+
 /* ---------- public code */
 
 void _rasterizer_widget_end(
@@ -790,9 +795,10 @@ void _rasterizer_widget_draw_sprite3d(
 			scale_x = scale_y = 1.0f;
 		}
 
-		IDirect3DDevice8_Begin(
-			global_d3d_device,
-			D3DPT_TRIANGLEFAN);
+		if (!widget_sprite3d_batch_open) /* port: (light volume batching) */
+			IDirect3DDevice8_Begin(
+				global_d3d_device,
+				D3DPT_TRIANGLEFAN);
 		IDirect3DDevice8_SetVertexDataColor(
 			global_d3d_device,
 			9,
@@ -845,10 +851,36 @@ void _rasterizer_widget_draw_sprite3d(
 			projected_center.y + scale_y * axis_x,
 			projected_center.z,
 			1.0f);
-		IDirect3DDevice8_End(global_d3d_device);
+		if (!widget_sprite3d_batch_open) /* port: (light volume batching) */
+			IDirect3DDevice8_End(global_d3d_device);
 	}
 
 	return;
+}
+
+/* port: (light volume batching) the sprites drawn until _end, each a quad of one
+quad list: a quad's triangles (0, 1, 2) and (0, 2, 3) are those of the
+four-vertex fan each sprite is drawn as on its own, in the same order, so the
+picture is the same for one draw instead of one per sprite */
+void rasterizer_widget_sprite3d_batch_begin(
+	void)
+{
+	if (widget_sprite3d_batch_open)
+		return;
+	IDirect3DDevice8_Begin(
+		global_d3d_device,
+		D3DPT_QUADLIST);
+	widget_sprite3d_batch_open = TRUE;
+}
+
+void rasterizer_widget_sprite3d_batch_end(
+	void)
+{
+	if (widget_sprite3d_batch_open)
+	{
+		widget_sprite3d_batch_open = FALSE;
+		IDirect3DDevice8_End(global_d3d_device);
+	}
 }
 
 long _rasterizer_widget_submit_occlusion_test(

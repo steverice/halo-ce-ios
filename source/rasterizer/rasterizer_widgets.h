@@ -55,6 +55,12 @@ void rasterizer_widget_draw_sprite3d(
 	real_vector2d const *scale,
 	real rotation,
 	unsigned long color);
+/* port: (light volume batching, rasterizer_xbox_widgets.c) the sprite3d draws
+between these are one draw */
+void rasterizer_widget_sprite3d_batch_begin(
+	void);
+void rasterizer_widget_sprite3d_batch_end(
+	void);
 long rasterizer_widget_submit_occlusion_test(
 	real_point3d const *point,
 	real radius,

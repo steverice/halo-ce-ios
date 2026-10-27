@@ -145,6 +145,10 @@ static const struct config_setting config_settings[] =
 		"Draw the decals (bullet holes, blood, scorch marks) that share a texture\n"
 		"in one draw each rather than one draw a decal: the same picture for less\n"
 		"CPU time. False draws each on its own, to compare." },
+	{ "display.light_volume_batching", _config_boolean, "true", "HALO_LIGHT_VOLUME_BATCHING", _environment_value, _platform_all,
+		"Draw the sprites of a light volume (a glow drawn as a row of sprites along\n"
+		"an object's marker) in one draw rather than one draw a sprite: the same\n"
+		"picture for less CPU time. False draws each on its own, to compare." },
 	{ "display.shadow_batching", _config_boolean, "true", "HALO_SHADOW_BATCHING", _environment_value, _platform_all,
 		"Draw all of a view's character and vehicle shadows before laying any on the\n"
 		"world, and in stereo lay one eye's shadows in the other too: the picture's\n"

@@ -143,12 +143,34 @@ static void a_held_draw_is_its_fans_in_order(void)
 	CHECK(!memcmp(batch, expected, indices * sizeof(unsigned short)));
 }
 
+/* light volume batching (rasterizer_widget_sprite3d_batch_begin): a quad list of n sprites makes the triangles that n
+four-vertex fans, held one after another, make, in the same order, for any n a held draw takes */
+static void a_quad_list_of_sprites_is_their_fans(void)
+{
+	static unsigned short fans[3 * 20000], quads[3 * 20000];
+	unsigned long sprites;
+
+	for (sprites = 0; sprites <= IMMEDIATE_BATCH_VERTICES / 4; sprites += sprites < 64 ? 1 : 997)
+	{
+		unsigned long sprite, fan_count = 0, quad_count;
+
+		for (sprite = 0; sprite < sprites; sprite++)
+			fan_count += generated(IMMEDIATE_BATCH_FAN, sprite * 4, 4, fans + fan_count);
+		quad_count = generated(IMMEDIATE_BATCH_QUADS, 0, sprites * 4, quads);
+		CHECK(fan_count == sprites * 6);
+		CHECK(quad_count == fan_count);
+		CHECK(!memcmp(fans, quads, fan_count * sizeof(unsigned short)));
+		CHECK(immediate_batch_fits(0, sprites * 4));
+	}
+}
+
 int main(void)
 {
 	primitives_match_their_unmerged_draws();
 	the_limit_is_exact();
 	many_large_fans_split_at_the_limit_and_keep_every_triangle();
 	a_held_draw_is_its_fans_in_order();
+	a_quad_list_of_sprites_is_their_fans();
 	if (failures)
 	{
 		fprintf(stderr, "%d failures\n", failures);
