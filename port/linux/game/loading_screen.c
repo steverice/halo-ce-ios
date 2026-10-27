@@ -162,6 +162,7 @@ static struct
 	unsigned long updated; /* system_milliseconds of the last update */
 	unsigned long logged;
 	boolean upscale_waiting; /* the wait for the level's upscaled textures */
+	boolean upscale_pending; /* the wait has begun (the worker may still be listing the textures): the bar stands lit */
 	real upscale_fraction;   /* 0 to 1: how much of that wait's work is done */
 	real upscale_base;       /* where the bar stands when the wait is over (0 if there was none): the rest fills from here */
 } loading_screen;
@@ -253,6 +254,7 @@ static void loading_screen_upscale_wait(char const *map_name)
 
 	if (!host_texture_upscale_level_begin(map_name))
 		return;
+	loading_screen.upscale_pending = TRUE;
 	for (;;)
 	{
 		boolean down;
@@ -274,11 +276,11 @@ static void loading_screen_upscale_wait(char const *map_name)
 		showed 0% for an instant), and never when they are all ready (the poll says NONE at once) */
 		loading_screen.upscale_waiting = texture_upscale_level_note_visible((enum texture_upscale_level_wait)state, total);
 		loading_screen.upscale_fraction = total ? (real)((double)done / (double)total) : 0.0f;
-		if (loading_screen.upscale_waiting)
-			loading_screen.upscale_base = UPSCALE_SHARE;
+		loading_screen.upscale_base = loading_screen.upscale_waiting ? UPSCALE_SHARE : UPSCALE_FIRST;
 		loading_screen_frame();
 	}
 	loading_screen.upscale_waiting = FALSE;
+	loading_screen.upscale_pending = FALSE;
 	host_texture_upscale_level_end(skipped);
 	platform_log("loading screen: upscaled textures %s after %lu ms (%llu of %llu units)",
 		skipped ? "skipped" : state == UPSCALE_LEVEL_NONE ? "ready" : "not all made",
@@ -388,10 +390,12 @@ boolean halo_loading_screen_progress(real *progress)
 			/* while the level's textures are upscaled first, the bar tracks that work in the read's first half */
 			if (loading_screen.upscale_waiting)
 				target = UPSCALE_FIRST + (UPSCALE_SHARE - UPSCALE_FIRST) * loading_screen.upscale_fraction;
+			else if (loading_screen.upscale_pending)
+				target = UPSCALE_FIRST;
 		}
 		else
 			target = READ_SHARE + (COMPILE_END - READ_SHARE) * loading_screen.work;
-		if (!loading_screen.upscale_waiting)
+		if (!loading_screen.upscale_waiting && !loading_screen.upscale_pending)
 			target = loading_screen.upscale_base + (1.0f - loading_screen.upscale_base) * target;
 	}
 	loading_screen.shown = halo_loading_progress_advance(loading_screen.shown, target, dt, ease);

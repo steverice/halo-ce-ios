@@ -316,43 +316,34 @@ font and color */
 long halo_hud_message_font_index(void); /* port: hud_messaging.c; NONE before the HUD's globals are loaded */
 boolean halo_hud_message_color(real_argb_color *color); /* port: hud_messaging.c */
 
-#define UPSCALE_SPINNER_SEGMENTS 28
-#define UPSCALE_SPINNER_RADIUS 11
+#define UPSCALE_SPINNER_GLYPH_RISE 17 /* from a period's cell top to its middle */
+#define UPSCALE_SPINNER_DOTS 10
+#define UPSCALE_SPINNER_RADIUS 12
 static void render_loading_upscale_spinner(
+	long font_tag_index,
 	short center_x,
 	short center_y,
 	real_argb_color const *color)
 {
-	/* an arc of three quarters of a turn that turns once a second, brightest at its head and fading to nothing at its tail */
+	/* a ring of round dots that turns once a second, brightest at its head and fading behind it. The dots are the
+	HUD font's period glyph, placed at each angle: the loading screen cannot draw textured quads of its own. */
 	real phase = (real)((system_milliseconds() % 1000) / 1000.0) * 6.2831853f;
-	short ring;
-	short segment;
+	short dot;
 
-	for (ring = 0; ring < 3; ring++)
+	for (dot = 0; dot < UPSCALE_SPINNER_DOTS; dot++)
 	{
-		real radius = (real)(UPSCALE_SPINNER_RADIUS - 1 + ring);
+		real age = (real)dot / UPSCALE_SPINNER_DOTS;
+		real angle = phase - age * 6.2831853f;
+		real_argb_color dot_color = *color;
+		rectangle2d bounds;
 
-		for (segment = 0; segment < UPSCALE_SPINNER_SEGMENTS; segment++)
-		{
-			real age0 = (real)segment / UPSCALE_SPINNER_SEGMENTS;
-			real age1 = (real)(segment + 1) / UPSCALE_SPINNER_SEGMENTS;
-			real angle0 = phase - age0 * 4.712389f;
-			real angle1 = phase - age1 * 4.712389f;
-			real_rgb_color color0, color1;
-			point2d p0, p1;
-
-			color0.red = color->red * (1.0f - age0);
-			color0.green = color->green * (1.0f - age0);
-			color0.blue = color->blue * (1.0f - age0);
-			color1.red = color->red * (1.0f - age1);
-			color1.green = color->green * (1.0f - age1);
-			color1.blue = color->blue * (1.0f - age1);
-			p0.x = center_x + (short)(cosf(angle0) * radius + (cosf(angle0) < 0 ? -0.5f : 0.5f));
-			p0.y = center_y + (short)(sinf(angle0) * radius + (sinf(angle0) < 0 ? -0.5f : 0.5f));
-			p1.x = center_x + (short)(cosf(angle1) * radius + (cosf(angle1) < 0 ? -0.5f : 0.5f));
-			p1.y = center_y + (short)(sinf(angle1) * radius + (sinf(angle1) < 0 ? -0.5f : 0.5f));
-			rasterizer_debug_immediate_line_screenspace(&p0, &p1, &color0, &color1);
-		}
+		dot_color.alpha = 1.0f - 0.9f * age;
+		bounds.x0 = center_x + (short)(cosf(angle) * UPSCALE_SPINNER_RADIUS) - 4;
+		bounds.y0 = center_y + (short)(sinf(angle) * UPSCALE_SPINNER_RADIUS) - UPSCALE_SPINNER_GLYPH_RISE;
+		bounds.x1 = bounds.x0 + 24;
+		bounds.y1 = bounds.y0 + 24;
+		draw_string_set_draw_mode(font_tag_index, NONE, 0, 0, &dot_color);
+		rasterizer_draw_string(&bounds, NULL, NULL, 0, ".");
 	}
 
 	return;
@@ -382,7 +373,7 @@ static void render_loading_upscale_note(
 	bounds.y1 = bounds.y1 - 24;
 	bounds.x0 += 40;
 	bounds.x1 -= 40;
-	render_loading_upscale_spinner(bounds.x0 + UPSCALE_SPINNER_RADIUS + 2, (bounds.y0 + bounds.y1) / 2, &color);
+	render_loading_upscale_spinner(font_tag_index, bounds.x0 + UPSCALE_SPINNER_RADIUS + 4, (bounds.y0 + bounds.y1) / 2, &color);
 	bounds.x0 += 2 * UPSCALE_SPINNER_RADIUS + 14;
 	draw_string_set_draw_mode(font_tag_index, NONE, 0, 0, &color);
 	rasterizer_draw_string(&bounds, NULL, NULL, 0, "Upscaling textures ...");
