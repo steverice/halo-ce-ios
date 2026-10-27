@@ -731,13 +731,13 @@ static const struct config_setting config_settings[] =
 		"refresh of the display; a number (\"60\", \"240\") holds that rate;\n"
 		"\"unlimited\" draws as fast as it can. In the Mac app, above the display's\n"
 		"refresh rate and with \"unlimited\", frames no longer wait for the display,\n"
-		"so the picture can tear and the Mac uses more power; a frame the display\n"
-		"isn't ready for is drawn and not shown. On iPhone, iPad and Apple TV a\n"
-		"number under the display's highest rate runs the display at it (\"60\" on\n"
-		"a 120 Hz screen); a higher number and \"unlimited\" keep the display's\n"
-		"rate. The game still runs at 30 ticks a second whatever is drawn, and with\n"
-		"display.interpolation off it draws 30 frames a second at most. A Vision\n"
-		"Pro paces frames itself and ignores this." },
+		"so the picture can tear and the Mac uses more power; each frame still\n"
+		"waits for a free drawable from the window server. On iPhone, iPad and\n"
+		"Apple TV a number under the display's highest rate runs the display at\n"
+		"it (\"60\" on a 120 Hz screen); a higher number and \"unlimited\" keep the\n"
+		"display's rate. The game still runs at 30 ticks a second whatever is\n"
+		"drawn, and with display.interpolation off it draws 30 frames a second at\n"
+		"most. A Vision Pro paces frames itself and ignores this." },
 	{ "display.async_shaders", _config_string, "\"auto\"", "HALO_ASYNC_SHADERS", _environment_value, _platform_ios,
 		"How the Metal renderer compiles shaders: \"auto\" (default) on worker\n"
 		"threads, skipping a draw for the frames until its pipeline is ready, so\n"

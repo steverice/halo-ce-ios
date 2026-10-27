@@ -514,6 +514,7 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
 run(BUILD/'immediate-batch-probe')
 run('python3', 'tools/renderer_build_probe.py')
 run('python3', 'tools/test_metal_border.py')
+run('python3', 'tools/test_mac_unsynced_present.py')
 # render validation (port/ios/host/gpu_validate.c): deliberately bad draws through a backend that draws
 # nothing, each checked for its named reason; then that a build without the option has none of it
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-DHALO_RENDER_VALIDATION=1',

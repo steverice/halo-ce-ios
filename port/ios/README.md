@@ -334,8 +334,8 @@ console's `rasterizer_debug_model_lod` overrides either.
 each refresh of the display. A number, such as `"60"` or `"240"`, holds that
 many frames a second, and `"unlimited"` draws as fast as the Mac can. Above the
 display's refresh rate, and with `"unlimited"`, frames stop waiting for the
-display: the picture can tear, the Mac uses more power and runs warmer, and a
-frame the display is not ready for is drawn and not shown.
+display: the picture can tear and the Mac uses more power and runs warmer.
+Each frame still waits for a free drawable from the window server.
 The game runs at 30 ticks a second whatever is drawn, and with
 `interpolation = false` it draws 30 frames a second at most. With the OpenGL ES
 renderer only caps under the display's rate hold. On iPhone, iPad, Apple TV

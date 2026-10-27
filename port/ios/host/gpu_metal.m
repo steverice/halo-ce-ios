@@ -5234,73 +5234,6 @@ static CFTimeInterval pacing_schedule(BOOL shown, uint32_t *next_frame_due)
 	return hold;
 }
 
-/* display.frame_rate in the Mac app (host_gpu_dispatch.c): when the setting
-is "unlimited" or a cap above the display's rate, frames stop waiting for the
-display. The layer no longer holds a drawable back for the refresh
-(displaySyncEnabled), and Present no longer waits in nextDrawable at all: the
-window server still hands drawables out at its own pace (two a refresh
-behind a locked screen), so a thread of its own asks for the next one, and
-a frame that finds none ready is drawn and not shown (free_drawable_take). A
-cap at or under the display's rate keeps both waits, so those frames don't
-tear, and host_frame_rate_limit holds the cap. The display's rate is the
-pacing clock's, which starts a few frames in (not at all with
-debug.fixed_timestep, where only "unlimited" lifts the wait). Returns
-whether frames go unsynchronized. */
-#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
-static struct
-{
-	dispatch_semaphore_t wanted;
-	/* a retained id<CAMetalDrawable>, or NULL while the thread waits for one */
-	_Atomic(void *) ready;
-} free_drawables;
-#endif
-
-/* the drawable the thread has waited for, or nil if none has come; again:
-the thread then asks for the next one. (With again NO it hands back one
-left over from before frames went back to waiting for the display.) */
-static id<CAMetalDrawable> free_drawable_take(BOOL again)
-{
-#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
-	void *taken;
-
-	if (!free_drawables.wanted)
-	{
-		NSThread *thread;
-
-		if (!again)
-			return nil;
-		free_drawables.wanted = dispatch_semaphore_create(1);
-		thread = [[NSThread alloc] initWithBlock:^{
-			for (;;)
-			{
-				dispatch_semaphore_wait(free_drawables.wanted, DISPATCH_TIME_FOREVER);
-				@autoreleasepool
-				{
-					id<CAMetalDrawable> next;
-
-					/* (nil in the background, or after its one-second timeout) */
-					while (!(next = [layer nextDrawable]))
-						usleep(5000);
-					atomic_store(&free_drawables.ready, (__bridge_retained void *)next);
-				}
-			}
-		}];
-		thread.name = @"Metal drawables";
-		thread.qualityOfService = NSQualityOfServiceUserInteractive;
-		[thread start];
-	}
-	taken = atomic_exchange(&free_drawables.ready, NULL);
-	if (!taken)
-		return nil;
-	if (again)
-		dispatch_semaphore_signal(free_drawables.wanted);
-	return (__bridge_transfer id<CAMetalDrawable>)taken;
-#else
-	(void)again;
-	return nil;
-#endif
-}
-
 /* The phone's drawable is fetched off the game thread. A generation fences
 an in-flight nextDrawable across disconnect/reconnect, including reusing the
 same phone layer. Only one drawable is held, and only one request is in flight. */
@@ -5431,6 +5364,21 @@ static void companion_present(BOOL main_shown)
 	}
 }
 
+/* display.frame_rate in the Mac app (host_gpu_dispatch.c): when the setting
+is "unlimited" or a cap above the display's rate, frames stop waiting for the
+display's refresh. The layer no longer holds a drawable back for the refresh
+(displaySyncEnabled), so a drawable comes back as soon as the window server
+lets go of one. Present still waits for it in nextDrawable, as a frame at the
+display's rate does: drawing frames there is no drawable for, and not showing
+them, cost three quarters of the work on a light level (2,550 frames drawn a
+second, 585 shown, on an M6 Mac mini) and showed no more of them. Behind a
+locked or hidden screen the wait is the window server's pace (two drawables a
+refresh) or nextDrawable's one-second timeout, as for a frame at the
+display's rate. A cap at or under the display's rate keeps the refresh wait
+too, so those frames don't tear, and host_frame_rate_limit holds the cap. The
+display's rate is the pacing clock's, which starts a few frames in (not at
+all with debug.fixed_timestep, where only "unlimited" lifts the wait).
+Returns whether frames go unsynchronized. */
 static BOOL frame_rate_sync(void)
 {
 #if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
@@ -6945,9 +6893,8 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		frame's CPU time */
 		if (!offscreen)
 			host_frame_rate_limit();
-		/* (unsynchronized, a frame with no drawable ready isn't shown; a frame
-		that gave up waiting for a frame in flight's slot isn't either, and the
-		window keeps the frame it has: host_frame_pacer.h) */
+		/* (a frame that gave up waiting for a frame in flight's slot isn't
+		shown, and the window keeps the frame it has: host_frame_pacer.h) */
 		BOOL gave_up = !frame_pacer_frame_begin(&paced, frames, pacing.work_started,
 			!frame_held && !unsynced && !offscreen);
 		if (offscreen)
@@ -6968,7 +6915,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		else
 #endif
 		drawable = frame_held || gave_up ? nil :
-			unsynced ? free_drawable_take(YES) : (free_drawable_take(NO) ?: [layer nextDrawable]);
+			[layer nextDrawable];
 		/* (a held frame waits a refresh, as the drawable would have, so the
 		game doesn't spin through frames of skipped draws, taking a core from
 		the compiles) */
