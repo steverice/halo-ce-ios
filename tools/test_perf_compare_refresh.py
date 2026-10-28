@@ -453,9 +453,10 @@ def test_native_display_by_drawable_and_port():
     assert 'window_scale = 1' in small and 'window_size = "640x480"' in small
     visr = m.adapters.native_display('visr', drawable='2560x1920')
     assert 'window_scale = 2' in visr and 'window_size' not in visr and 'screen_height = 480' in visr
-    for port in ('opence-macos', 'corece'):
-        other = m.adapters.native_display(port, drawable='2560x1920')
-        assert 'window_size = "1280x960"' in other and 'window_scale = 1' in other and 'screen_height = 960' in other
+    other = m.adapters.native_display('opence-macos', drawable='2560x1920')
+    assert 'window_size = "1280x960"' in other and 'window_scale = 1' in other and 'screen_height = 960' in other
+    core = m.adapters.native_display('corece', drawable='2560x1920')  # CoreCE ignores window_size; window_scale is its size key
+    assert 'window_scale = 2' in core and 'window_size' not in core
     assert m.adapters.drawable_window('2560x1920') == (1280, 960)
     for bad in ('1920x1080', '', None):
         with pytest.raises(ValueError):
@@ -508,3 +509,13 @@ def test_a_trace_without_frames_repeats_the_round_instead_of_ending_the_target(t
     assert calls == ['c10'] * 3
     [record] = json.loads((tmp_path / 'summary.json').read_text())['records']
     assert [x['reason'] for x in record['rejected']] == ['no-intervals', 'no-intervals'] and record['status'] == 'unavailable'
+
+
+def test_corece_and_halo_og_size_their_window_by_scale_and_halo_og_has_uncapped_stock_settings():
+    m = engine()
+    for port in ('corece', 'halo-og'):
+        big = m.adapters.native_display(port, 'uncapped', 'matched-stock', '2560x1920')
+        assert 'window_scale = 2' in big and 'window_size' not in big and 'frame_limit = 0' in big and 'vsync = false' in big
+        assert 'render_height = 0' in big
+    assert 'shadow_resolution' not in m.adapters.native_display('halo-og', 'uncapped', 'matched-stock', '2560x1920')
+    assert 'shadow_resolution = 128' in m.adapters.native_display('corece', 'uncapped', 'matched-stock', '2560x1920')

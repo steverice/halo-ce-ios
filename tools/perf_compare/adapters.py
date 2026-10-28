@@ -195,8 +195,10 @@ def native_display(target_id, frame_mode='capped', quality_preset='defaults', dr
     if width == 640:
         display += ('fullscreen = false\nscreen_width = 0\nscreen_height = 480\nrender_height = 0\n'
                     'window_scale = 1\nwindow_size = "640x480"\ninterpolation = true\n')
-    elif target_id == 'visr':
-        # VISR's window_size key is desktop-only; the Mac app sizes its window as 640x480 points times window_scale.
+    elif target_id in ('visr', 'corece', 'halo-og'):
+        # VISR's window_size key is desktop-only; CoreCE and Halo OG have no such key either (their documented
+        # `display.window_scale` is the window size as a multiple of 640x480 points). The Mac app sizes its window as
+        # 640x480 points times window_scale.
         display += ('fullscreen = false\nscreen_width = 0\nscreen_height = 480\nrender_height = 0\n'
                     f'window_scale = {width // 640}\ninterpolation = true\n')
     else:
@@ -207,8 +209,8 @@ def native_display(target_id, frame_mode='capped', quality_preset='defaults', dr
             display += 'frame_rate = "unlimited"\nvsync = false\n'
         elif target_id == 'opence-macos':
             display += 'max_fps = -1\nvsync = false\n'
-        elif target_id == 'corece':
-            # CoreCE's written config: frame_limit caps only with vsync off, and 0 leaves no cap.
+        elif target_id in ('corece', 'halo-og'):
+            # CoreCE's and Halo OG's written config: frame_limit caps only with vsync off, and 0 leaves no cap.
             display += 'frame_limit = 0\nvsync = false\n'
         else:
             raise ValueError('uncapped settings undocumented for target')
@@ -227,7 +229,8 @@ def native_display(target_id, frame_mode='capped', quality_preset='defaults', dr
                         'viewmodel_fov = 0.0\nper_pixel_lighting = false\nviewmodel_shield = false\nshield_glow = false\n')
             if target_id == 'corece':
                 display += 'model_detail = "stock"\n'
-
+        elif target_id == 'halo-og':
+            pass  # only the stock options above apply; its settings page has no shadow, FOV or lighting options
         else:
             raise ValueError('stock settings undocumented for target')
     elif quality_preset != 'defaults':
@@ -277,10 +280,10 @@ def _native(target, scenario, out, config):
             '[debug]\ntelnet_console = true\ntelnet_console_port = ' + str(port) + '\n'
             + (f'test_input = "{window["test_input"]}"\n' if window['kind'] == 'bot' and target['id'] == 'visr' else ''))
     # Chupathingy and Halo OG take the telnet console and window mode from the environment (strings in their release
-    # binaries, proven by the console lane); Chupathingy has no config.toml, and both get a minimal one without the
-    # keys their settings do not document.
+    # binaries, proven by the console lane); Chupathingy has no config.toml. Halo OG's documented `display.window_scale`
+    # and `HALO_WINDOWED` (windowed Mac play) set its drawable like CoreCE's and VISR's.
     environment_port = target['id'] in ENV_CONSOLE_PORTS
-    if environment_port:
+    if target['id'] == 'chupathingy':
         text = ('[display]\nfullscreen = false\n[audio]\nenabled = false\n[network]\nonline = false\n[update]\nauto = false\n'
                 '[debug]\ntelnet_console = true\ntelnet_console_port = ' + str(port) + '\n'
                 + (f'test_input = "{window["test_input"]}"\n' if window['kind'] == 'bot' else ''))
@@ -297,7 +300,8 @@ def _native(target, scenario, out, config):
     if environment_port:
         (out / 'home').mkdir(exist_ok=True)
         env.update({'HOME': str(out / 'home'), 'HALO_TELNET_CONSOLE': '1', 'HALO_TELNET_CONSOLE_PORT': str(port),
-                    'HALO_DISPLAY_MODE': 'windowed', 'HALO_WINDOW_SCALE': '1', 'HALO_UPDATE_AUTO': '0'})
+                    'HALO_DISPLAY_MODE': 'windowed', 'HALO_WINDOWED': '1', 'HALO_UPDATE_AUTO': '0',
+                    'HALO_WINDOW_SCALE': str(drawable_window(drawable)[0] // 640)})
     # Execute only the published bundle's declared host. Never read its code.
     stderr = (out / 'app.log').open('w')
     process = subprocess.Popen([str(binary), *target.get('args', [])], cwd=(out if target['id'] in ENV_CONSOLE_PORTS else app.parent), env=env,
