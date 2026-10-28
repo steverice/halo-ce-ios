@@ -27,8 +27,10 @@
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* Controls: the suite switch is a row of pills; the radios stay in the tab order behind them. */
-.bench-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; border: 0; border-bottom: 1px solid var(--line);
-  padding: 10px 0; margin: 18px 0 8px; background: var(--bg); position: sticky; top: 0; z-index: 10; }
+.bench-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; border: 0;
+  padding: 10px 0; margin: 18px 0 8px; position: sticky; top: 0; z-index: 20;
+  /* Full-width and opaque: the page color spreads past the column on both sides, clipped to the bar's own height. */
+  background: var(--bg); box-shadow: 0 0 0 100vmax var(--bg), 0 1px 0 100vmax var(--line); clip-path: inset(0 -100vmax -1px); }
 .bench-bar legend { float: left; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0; margin-right: 10px; line-height: 2.2; }
 .bench-bar label { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line);
   border-radius: 999px; font-size: 0.9rem; cursor: pointer; user-select: none; }
@@ -114,8 +116,8 @@
 }
 
 /* The suite bar is sticky, so jump targets keep clear of it. */
-h2[id], .bench { scroll-margin-top: 76px; }
-@media (max-width: 600px) { h2[id], .bench { scroll-margin-top: 12px; } }
+h2[id], .bench, .bench-media { scroll-margin-top: 76px; }
+@media (max-width: 600px) { h2[id], .bench, .bench-media { scroll-margin-top: 12px; } }
 
 .method { max-width: 760px; margin-inline: auto; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); }
 .method h2 { font-size: 1.5rem; }
