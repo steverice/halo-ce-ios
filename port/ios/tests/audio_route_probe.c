@@ -49,4 +49,20 @@ int main(void) {
     assert(!host_audio_stall_due(&stall,last+4*S,1,1));
     assert(host_audio_stall_due(&stall,last+5*S,0,1));
     puts("PASS: stall reopens wait 0, 3, 6, 12, then 30 s; none during an interruption; waits restart after recovery");
+
+    int interrupted=0,recover=0;
+    /* a call begins: held, no reopen; it ends: released, reopen */
+    host_audio_interruption(1,0,&interrupted,&recover);
+    assert(interrupted && !recover);
+    host_audio_interruption(0,0,&interrupted,&recover);
+    assert(!interrupted && recover);
+    /* AirPods or a cable dropped: no hold, reopen on the speaker */
+    interrupted=recover=0;
+    host_audio_interruption(1,1,&interrupted,&recover);
+    assert(!interrupted && recover);
+    /* a disconnect during a call keeps the call's hold and does not reopen under it */
+    interrupted=1;recover=0;
+    host_audio_interruption(1,1,&interrupted,&recover);
+    assert(interrupted && !recover);
+    puts("PASS: interruptions hold the stall check until their end; route disconnects reopen without holding it");
 }

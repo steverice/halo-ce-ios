@@ -79,7 +79,11 @@ static struct host_external_refresh accessory_refresh;
 static struct host_audio_route audio_route;
 static _Atomic int audio_recover;
 /* a system interruption (a call, Siri, an alarm) is under way: the system has stopped the sound on purpose, so the
-   stall check and debug.audio_reopen_test leave it alone until it ends */
+   stall check and debug.audio_reopen_test leave it alone until it ends. Only the interruption's end clears it:
+   becoming active again does not, since that also happens during a call (Control Center, the app switcher, back
+   from the Phone app) and would bring game sound back over it. A flag left set because no end came (the app was
+   suspended through it) only turns the stall check off: SDL still restarts its queue when the app becomes active,
+   and a route change to or from an external display still reopens, since that path does not read this flag. */
 static _Atomic int audio_interrupted;
 static UILabel *playing_label;
 static IMP original_configuration[2];
@@ -325,15 +329,21 @@ void host_external_install(void) {
     [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionInterruptionNotification object:nil queue:nil
         usingBlock:^(NSNotification *note){
             NSUInteger type=[note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
-            if(type==AVAudioSessionInterruptionTypeBegan)atomic_store(&audio_interrupted,1);
-            else if(type==AVAudioSessionInterruptionTypeEnded) {
-                atomic_store(&audio_interrupted,0);
-                atomic_store(&audio_recover,1);atomic_store(&audio_changed,1);
+            if(type!=AVAudioSessionInterruptionTypeBegan && type!=AVAudioSessionInterruptionTypeEnded)return;
+            int disconnected=0;
+            if(@available(iOS 17.0,*)) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+                /* (the key is deprecated in iOS 27 for the deactivation context, which iOS 17 to 26 do not have) */
+                disconnected=[note.userInfo[AVAudioSessionInterruptionReasonKey] unsignedIntegerValue]==
+                    AVAudioSessionInterruptionReasonRouteDisconnected;
+#pragma clang diagnostic pop
             }
+            int interrupted=atomic_load(&audio_interrupted),recover=0;
+            host_audio_interruption(type==AVAudioSessionInterruptionTypeBegan,disconnected,&interrupted,&recover);
+            atomic_store(&audio_interrupted,interrupted);
+            if(recover){atomic_store(&audio_recover,1);atomic_store(&audio_changed,1);}
         }];
-    /* an interruption's end is not always sent (the app was suspended during it): becoming active ends it too */
-    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil
-        usingBlock:^(NSNotification *note){(void)note;atomic_store(&audio_interrupted,0);}];
     [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionMediaServicesWereResetNotification object:nil queue:nil
         usingBlock:^(NSNotification *note){
             (void)note;atomic_store(&audio_recover,1);atomic_store(&audio_changed,1);

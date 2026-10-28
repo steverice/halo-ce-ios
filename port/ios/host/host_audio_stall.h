@@ -18,3 +18,14 @@ static inline int host_audio_stall_due(struct host_audio_stall *state,uint64_t n
     state->reopened=now;state->reopens++;
     return 1;
 }
+
+/* An AVAudioSession interruption notice: began (else ended) and whether it began because the route went away
+   (AVAudioSessionInterruptionReasonRouteDisconnected, iOS 17: AirPods out of range, a cable pulled). A real
+   interruption holds the stall check until it ends; its end, or a route disconnect, asks for a reopen on the
+   route the system has now (the speaker), since a disconnect sends no end. A disconnect during a call changes
+   nothing: the call's end reopens on whatever route is left then. */
+static inline void host_audio_interruption(int began,int route_disconnected,int *interrupted,int *recover) {
+    if(!began) {*interrupted=0;*recover=1;}
+    else if(!route_disconnected)*interrupted=1;
+    else if(!*interrupted)*recover=1;
+}
