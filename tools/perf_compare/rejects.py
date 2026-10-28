@@ -27,8 +27,9 @@ def check(window: dict, outcome: dict) -> list[str]:
         if any(count is None for count in counts):
             notes.append('encounter counts unreadable on this console; placement checked by screenshot only')
         began, ended = number(start.get('(game_time)')), number(end.get('(game_time)'))
-        # A checkpoint reload puts game time back; the sample must have advanced about as long as it ran.
-        if began is not None and ended is not None and ended < began + 0.9 * window['sample_s'] * TICKS_PER_SECOND:
+        # A checkpoint reload puts game time back or stalls it. A port too slow to run its 30 ticks a second advances
+        # fewer ticks in the same wall-clock sample (Halo OG on a50: about 26 a second), which is not a revert.
+        if began is not None and ended is not None and ended < began + 0.5 * window['sample_s'] * TICKS_PER_SECOND:
             raise ValueError('player-reverted')
     elif kind == 'bot':
         if outcome.get('ended') == 'never-started':

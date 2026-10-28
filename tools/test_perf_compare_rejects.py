@@ -88,6 +88,7 @@ def test_battle_rejects_nothing_placed_and_reverts_but_not_a_zero_health_deathle
         rejects.check(*battle(placed=('40', '0')))
     with pytest.raises(ValueError, match='player-reverted'):
         rejects.check(*battle(end_time='9500'))  # game time fell back or stalled: a checkpoint reload
+    assert rejects.check(*battle(end_time='10700')) == []  # 1,700 of 1,800 ticks: a slow port, not a revert
     window, outcome = battle()
     outcome['end']['(unit_get_health (unit (list_get (players) 0)))'] = '0'
     assert rejects.check(window, outcome) == []  # deathless: zero health is not a death
