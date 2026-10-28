@@ -6,6 +6,7 @@ items = [
     { icon = "cloud", title = "Cross-device sync", text = "Your saves and player profiles sync across all your devices through iCloud. Zero setup required." },
     { icon = "just-works", title = "It just works", text = "VISR is specifically optimized for each Apple device for [unmatched performance](benchmarks.html) out of the box." },
     { icon = "community", title = "Compatible with the community", text = "VISR aims for cross-play with the popular Halo: CE ports like [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and [Chupathingy](https://chupathingy.org)." },
+    { icon = "license", title = "Permissive license", text = "All VISR code is [Apache-2.0](https://github.com/steverice/visr/blob/main/LICENSE), so you can use it in any port, mod, tool or server, under any license." },
 ]
 
 [shared]
