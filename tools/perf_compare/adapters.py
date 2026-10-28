@@ -15,6 +15,7 @@ import urllib.error
 import urllib.request
 
 import consolewin
+import glft
 import windows
 
 
@@ -180,6 +181,18 @@ def native(target, scenario, out, config):
 # Drawable size in pixels -> window size in points. The Macs run the window at 2x, so the drawable is twice the window.
 TRACE_SETUP_WAIT_S = 3
 ENV_CONSOLE_PORTS = ('chupathingy', 'halo-og')
+# Ports timed at their OpenGL frame swap (glft.py) because metalperftrace does not see their presentation.
+GLFT_PORTS = ('chupathingy',)
+# Chupathingy has no config.toml; its documented environment switches set the frame limit (found in its release notes
+# and settings help). Uncapped is vsync off and no frame limit.
+GLFT_ENVIRONMENT = {'uncapped': {'HALO_NO_VSYNC': '1', 'HALO_MAX_FPS': '-1'}, 'capped': {'HALO_MAX_FPS': '60'}}
+
+
+def timing_method(target, config):
+    """`glft` for OpenGL ports, `metalperftrace` when the config asks for it, else the Metal HUD."""
+    if target['id'] in GLFT_PORTS:
+        return 'glft'
+    return config.get('native_method', 'hud')
 DRAWABLES = {'1280x960': (640, 480), '2560x1920': (1280, 960)}
 
 
@@ -304,6 +317,11 @@ def _native(target, scenario, out, config):
         env.update({'HOME': str(out / 'home'), 'HALO_TELNET_CONSOLE': '1', 'HALO_TELNET_CONSOLE_PORT': str(port),
                     'HALO_DISPLAY_MODE': 'windowed', 'HALO_WINDOWED': '1', 'HALO_UPDATE_AUTO': '0',
                     'HALO_WINDOW_SCALE': str(drawable_window(drawable)[0] // 640)})
+    method = timing_method(target, config)
+    glft_output = out / 'glft.bin'
+    if method == 'glft':
+        env.update(GLFT_ENVIRONMENT[config.get('frame_mode', 'capped')])
+        env.update(glft.shim_environment(glft.compile_shim(out / 'libglft.dylib'), glft_output))
     # Execute only the published bundle's declared host. Never read its code.
     stderr = (out / 'app.log').open('w')
     process = subprocess.Popen([str(binary), *target.get('args', [])], cwd=(out if target['id'] in ENV_CONSOLE_PORTS else app.parent), env=env,
@@ -346,7 +364,7 @@ def _native(target, scenario, out, config):
                 capture_window(process.pid, out / 'qualification.png')
             state['before'] = thermal()
             state['log_stream'] = (out / 'hud.log').open('w')
-            if config.get('native_method') == 'metalperftrace':
+            if method == 'metalperftrace':
                 run(['metalperftrace', 'setup', '--enable', 'per-frame-metrics', '--pid', str(process.pid)])
                 # A collect right after setup sometimes returns no frames (6 of 18 first windows in the survey).
                 time.sleep(TRACE_SETUP_WAIT_S)
@@ -376,7 +394,14 @@ def _native(target, scenario, out, config):
             frontmost(process.pid)
             if config.get('capture_windows'):
                 capture_window(process.pid, out / 'qualification-end.png')
-            if config.get('native_method') == 'metalperftrace':
+            if method == 'glft':
+                swaps = glft.read_swaps(glft_output)
+                (out / 'glft-intervals.json').write_text(json.dumps({
+                    'intervals_ms': glft.intervals_ms(swaps, state['trace_start'], trace_end), 'swaps_total': len(swaps),
+                    'viewport': glft.viewport(glft_output)}))
+                if glft.viewport(glft_output) != target.get('drawable', drawable).replace('x', '×'):
+                    raise RuntimeError('resolution-mismatch')
+            if method == 'metalperftrace':
                 collect = json.loads(run(['metalperftrace', 'collect', '--start', '@' + str(state['trace_start']),
                                           '--end', '@' + str(trace_end), '--json', str(out / 'traces')]))
                 timelines = [json.loads(run(['metalperftrace', 'overview', '--json', '--json-include-timeline',
@@ -426,6 +451,8 @@ def _native(target, scenario, out, config):
         if log_stream:
             log_stream.close()
         stderr.close()
+        if method == 'glft':
+            glft_output.unlink(missing_ok=True)  # 64 MB memory-mapped swap log; the intervals are already in glft-intervals.json
         # Halo OG's per-run maps copy is regenerable and several GB: remove it as soon as the run is over.
         if target['id'] == 'halo-og' and (data / 'maps').is_dir() and not (data / 'maps').is_symlink():
             shutil.rmtree(data / 'maps', ignore_errors=True)

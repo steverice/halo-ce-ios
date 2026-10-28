@@ -21,6 +21,7 @@ import adapters
 import rejects
 import windows
 
+GLFT_METHOD = 'OpenGL frame-swap timestamps (glft)'
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
 SUMMARY = ROOT / 'tools/perf_compare/summary.json'
@@ -336,7 +337,7 @@ def refresh(config, summary_path, page_path):
                       'date': datetime.now(timezone.utc).date().isoformat(),
                       'bundle_storage': target.get('bundle_storage', ''),
                       'method': 'Safari RAF callbacks (entry-document hash)' if target['id'] == 'opence-web'
-                      else ('metalperftrace on-glass intervals' if config.get('native_method') == 'metalperftrace'
+                      else (GLFT_METHOD if target['id'] in adapters.GLFT_PORTS else 'metalperftrace on-glass intervals' if config.get('native_method') == 'metalperftrace'
                             else 'Metal HUD present intervals'), 'reason': '', 'runs': []}
             if config.get('native_scenario') == 'opening-sequence':
                 record['native_scenario'] = 'opening-sequence'
@@ -417,6 +418,8 @@ def refresh(config, summary_path, page_path):
                             raise RuntimeError('resolution-mismatch')
                         if target['id'] == 'opence-web':
                             intervals = parse_raf(json.loads((folder / 'raf.json').read_text())['timestamps'])
+                        elif adapters.timing_method(target, config) == 'glft':
+                            intervals = json.loads((folder / 'glft-intervals.json').read_text())['intervals_ms']
                         elif config.get('native_method') == 'metalperftrace':
                             intervals = parse_metal_trace(json.loads((folder / 'timeline.json').read_text()),
                                                           run_record['resolution'])
@@ -425,7 +428,7 @@ def refresh(config, summary_path, page_path):
                         if not intervals:
                             raise RuntimeError('no-intervals')
                         measured = metrics(intervals, config.get('display_hz', 60))
-                        if config.get('native_method') == 'metalperftrace' and target['id'] != 'opence-web':
+                        if config.get('native_method') == 'metalperftrace' and target['id'] not in ('opence-web', *adapters.GLFT_PORTS):
                             measured.update(gpu_metrics(parse_metal_trace_gpu(json.loads((folder / 'timeline.json').read_text()))))
                         if measured['duration_s'] < 58 and (not win or win['kind'] in ('opening', 'battle')):
                             raise RuntimeError('short-window')

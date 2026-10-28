@@ -27,6 +27,8 @@ TIMING = {
            "p95/p99 agree within 1%.",
     "app": "The app's own benchmark report: VISR's report, or the telemetry of a port that has no timing tool, "
            "counted over the same warm-up and sampling window.",
+    "swap": "The OpenGL frame swap, timestamped by a shim in the app's process (`flushBuffer` / `CGLFlushDrawable`), for a "
+            "port that `metalperftrace` does not see. GPU time per frame is not available for these ports (OpenGL).",
     "raf": "Safari `requestAnimationFrame` callbacks, which measure browser scheduling.",
     "hud": "Metal HUD per-frame presentation intervals.",
     "other": "Another method, named in the `method` column.",
@@ -60,7 +62,7 @@ def timing_section(rows: list[dict]) -> list[str]:
         if not mine:
             continue
         hosts = sorted({row["host"] for row in mine})
-        for group in ("trace", "mst", "app", "raf", "hud", "other"):
+        for group in ("trace", "swap", "mst", "app", "raf", "hud", "other"):
             chosen = [row for row in mine if method_group(row) == group]
             if not chosen:
                 continue
@@ -213,7 +215,7 @@ def methodology(summary: dict, rows: list[dict]) -> list[str]:
     lines.extend(uncapped_section(rows))
     lines.extend(suite_section(rows))
     lines.extend(_notes(records))
-    groups = [group for group in ("trace", "mst", "app", "hud", "raf", "other")
+    groups = [group for group in ("trace", "swap", "mst", "app", "hud", "raf", "other")
               if any(method_group(r) == group for r in ok)]
     lines.extend(line for group in groups for line in (METHOD_NOTES[group], ""))
     return lines
