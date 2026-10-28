@@ -254,6 +254,15 @@ section > p > img { display: block; width: 100%; border-radius: 16px; }
 .suite-shots span { display: block; margin-top: 1px; white-space: nowrap; margin-inline: -8px; font-size: 0.6rem; line-height: 1.15; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
 
 @media (min-width: 900px) {
+  /* The pills' row reserves the height of a screenshot with its caption, so the bar is as tall for Overall (no screenshots) as for any suite. */
+  .suite-pills { min-height: 50px; }
+}
+@media (min-width: 900px) and (max-width: 1059px) {
+  .bench-bar label { padding: 0 10px; }
+  .suite-shots { gap: 6px; }
+  .suite-shots li, .suite-shots img { width: 44px; } .suite-shots img { height: 28px; }
+}
+@media (min-width: 900px) {
   .bench-bar { position: sticky; top: 0; z-index: 20; isolation: isolate; padding: var(--space-2) 0; row-gap: 4px; }
   /* The page color at about 88% opacity with a blur, spread past the column on both sides, so content scrolls faintly behind
      the bar; the bottom line runs the same width. */

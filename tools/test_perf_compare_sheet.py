@@ -955,3 +955,8 @@ def test_the_suite_label_wraps_with_the_pills_and_the_legend_takes_no_room_so_th
     assert "position: absolute" in legend and "float" not in legend
     html = (ROOT / "docs/site/benchmarks.html").read_text()
     assert re.search(r'<legend>Suite</legend><div class="suite-pills"><span class="suite-label" aria-hidden="true">Suite</span><label>', html)
+
+
+def test_the_pills_row_reserves_the_height_of_a_screenshot_so_the_suite_bar_never_changes_height():
+    css = (ROOT / "docs/site/style.css").read_text()
+    assert re.search(r"@media \(min-width: 900px\) \{[^@]*\.suite-pills \{ min-height: 50px; \}", css)
