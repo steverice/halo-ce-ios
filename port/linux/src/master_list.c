@@ -271,7 +271,9 @@ static int master_read_game(struct master_json object, struct master_game *game)
 		if (digit < 0) return 0;
 		game->id[index] = "0123456789abcdef"[digit];
 	}
-	if (!json_member(object, "region", &value) || json_text(&value, game->region, sizeof(game->region), 1) < 0) return 0;
+	/* (the operator's region is unsigned display text: missing or null is none) */
+	if (json_member(object, "region", &value) && !(value.end - value.position == 4 && !memcmp(value.position, "null", 4)) &&
+		json_text(&value, game->region, sizeof(game->region), 1) < 0) return 0;
 	if (!json_member(object, "updated", &value) || !json_unsigned(value, &game->updated) || !game->updated) return 0;
 	if (!json_member(object, "listing", &value)) return 0;
 	length = json_string(&value, encoded, sizeof(encoded));

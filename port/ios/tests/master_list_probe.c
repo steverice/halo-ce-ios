@@ -84,6 +84,19 @@ int main(int argc, char **argv)
 	CHECK(master_parse_authenticated(body, length, 1793142772, games, 512, error, sizeof(error)) == 1);
 	CHECK(!strcmp(games[0].region, "na-east"));
 	CHECK(!strcmp(games[0].id, "0123456789abcdef"));
+	/* (an operator's missing or null region is no region, not a bad entry) */
+	{
+		char bare[1024];
+		int bare_length;
+
+		snprintf(entry, sizeof(entry), "{\"id\":\"0123456789abcdef\",\"updated\":2,\"listing\":\"%s\"},"
+			"{\"id\":\"0123456789abcde0\",\"region\":null,\"updated\":2,\"listing\":\"%s\"}", listing, listing);
+		bare_length = snprintf(bare, sizeof(bare), "{\"protocol\":1,\"master\":{\"key_id\":\"fe290a97f7ab592b\",\"time\":1793142772},\"servers\":[%s]}", entry);
+		CHECK(bare_length < (int)sizeof(bare));
+		CHECK(master_parse_authenticated(bare, bare_length, 1793142772, games, 512, error, sizeof(error)) == 2);
+		CHECK(!games[0].region[0] && !games[1].region[0]);
+	}
+	snprintf(entry, sizeof(entry), "{\"id\":\"0123456789ABCDEF\",\"region\":\"n\\u0000a\\t-\\u007feast\",\"updated\":2,\"listing\":\"%s\"}", listing);
 	body[12] = '2';
 	CHECK(master_parse_authenticated(body, length, 1793142772, games, 512, error, sizeof(error)) == -1);
 	body[12] = '1';
