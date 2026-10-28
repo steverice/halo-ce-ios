@@ -320,6 +320,12 @@ extern unsigned long current_time;
 static boolean progress_bar_rendering_enabled= TRUE;
 /* port: port/linux/game/loading_screen.c */
 extern boolean halo_loading_screen_smooth(void);
+/* port: port/linux/src/xbox_textures.c: the picture 4 times larger when the on-device upscaler made it
+(port/runtime/loading_picture_upscaled.h), else NULL */
+extern unsigned char *halo_loading_picture_upscaled(const unsigned char *gray, long *scale);
+extern void halo_loading_picture_upscaled_free(unsigned char *levels);
+/* port: how many times larger than 320 by 240 the picture's texture is (its texture coordinates are in texels) */
+static long progress_bar_picture_scale= 1;
 /* port: where the loading screen's tone stops following the bar (progress_bar_render) */
 #define SOUND_HOLD_PROGRESS 0.9f
 
@@ -1995,6 +2001,7 @@ static void draw_layer_int(
 	struct gravy_rectangle2d rect;
 	real half_width= layer->texture_width*0.5f;
 	real half_height= layer->texture_height*0.5f;
+	real picture_scale= (real)progress_bar_picture_scale; /* port: the picture's texels per original texel */
 	real mask_position;
 
 	generate_gravy_rect(layer, &rect);
@@ -2006,13 +2013,13 @@ static void draw_layer_int(
 		color->red, color->green, color->blue, alpha);
 	mask_position= progress*768.f - 64.f - 64.f;
 	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD1, 0.f - mask_position, 0.f);
-	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, 0.f, half_height);
+	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, 0.f, half_height*picture_scale);
 	IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, rect.x0, rect.y0, 0.5f, 1.f);
 	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD1, 640.f - mask_position, 0.f);
-	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, half_width, half_height);
+	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, half_width*picture_scale, half_height*picture_scale);
 	IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, rect.x1, rect.y0, 0.5f, 1.f);
 	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD1, 640.f - mask_position, 16.f);
-	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, half_width, 0.f);
+	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, half_width*picture_scale, 0.f);
 	IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, rect.x1, rect.y1, 0.5f, 1.f);
 	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD1, 0.f - mask_position, 16.f);
 	IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, 0.f, 0.f);
@@ -2603,8 +2610,11 @@ static void progress_bar_load_loading_texture(
 	struct tga_image image;
 	D3DLOCKED_RECT locked_rect;
 	unsigned long *pixels;
+	unsigned char *larger= NULL;
+	long scale= 1;
 	FILE *file;
 
+	progress_bar_picture_scale= 1;
 	IDirect3DDevice8_CreateTexture(global_d3d_device, 320, 240, 1, 0, D3DFMT_LIN_A8B8G8R8, 0, texture);
 	IDirect3DTexture8_LockRect(*texture, 0, &locked_rect, NULL, 0);
 	IDirect3DTexture8_GetLevelDesc(*texture, 0, &surface_description);
@@ -2633,7 +2643,47 @@ static void progress_bar_load_loading_texture(
 	{
 		progress_bar_fallback_picture(pixels);
 	}
+	else
+	{
+		/* port: where the on-device upscaler has made this picture 4 times larger (and the upscaled textures are on),
+		the larger one stands in for it in a texture of its own, over the same area */
+		static unsigned char gray[320*240]; /* (static: not 76 KB of the game thread's stack) */
+		long index;
+
+		for (index= 0; index<320*240; index++)
+		{
+			gray[index]= (unsigned char)(pixels[index]>>16);
+		}
+		larger= halo_loading_picture_upscaled(gray, &scale);
+	}
 	IDirect3DTexture8_UnlockRect(*texture, 0);
+	if (larger)
+	{
+		IDirect3DTexture8 *larger_texture= NULL;
+
+		IDirect3DDevice8_CreateTexture(global_d3d_device, 320*scale, 240*scale, 1, 0, D3DFMT_LIN_A8B8G8R8, 0, &larger_texture);
+		if (larger_texture)
+		{
+			long x, y;
+
+			IDirect3DTexture8_LockRect(larger_texture, 0, &locked_rect, NULL, 0);
+			pixels= locked_rect.pBits;
+			for (y= 0; y<240*scale; y++)
+			{
+				for (x= 0; x<320*scale; x++)
+				{
+					unsigned long intensity= larger[y*320*scale + x];
+
+					pixels[y*320*scale + x]= ((intensity<<9) | (intensity & ~1))<<7 | intensity>>2;
+				}
+			}
+			IDirect3DTexture8_UnlockRect(larger_texture, 0);
+			IDirect3DTexture8_Release(*texture);
+			*texture= larger_texture;
+			progress_bar_picture_scale= scale;
+		}
+		halo_loading_picture_upscaled_free(larger);
+	}
 
 	return;
 }

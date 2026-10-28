@@ -676,6 +676,10 @@ run(BUILD/'texture-cache-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/texture_upscale_state_probe.c', '-o', BUILD/'texture-upscale-state-probe')
 run(BUILD/'texture-upscale-state-probe')
+# the loading screen's larger picture: its file, checks and TGA read (port/runtime/loading_picture_upscaled.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/runtime',
+    'port/ios/tests/loading_picture_upscaled_probe.c', '-o', BUILD/'loading-picture-upscaled-probe')
+run(BUILD/'loading-picture-upscaled-probe')
 # when the on-device upscaler may run: the profile gate, gameplay and pauses (port/runtime/texture_upscale_schedule.h)
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-fsanitize=address,undefined', '-Iport/runtime',
     'port/ios/tests/texture_upscale_schedule_probe.c', '-o', BUILD/'texture-upscale-schedule-probe')

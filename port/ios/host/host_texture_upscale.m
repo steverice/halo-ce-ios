@@ -23,6 +23,7 @@ waits for it unless the player skips. One texture at a time; the manifest is the
 #include "host_profile.h"
 #include "texture_refine.h"
 #include "texture_upscale_big.h"
+#include "loading_picture_upscaled.h"
 #include <sys/stat.h>
 #include <stdatomic.h>
 #include <sys/statvfs.h>
@@ -556,6 +557,72 @@ static void delete_cache(void) {
     [NSFileManager.defaultManager createDirectoryAtPath:cache_directory() withIntermediateDirectories:YES attributes:nil error:nil];
     host_logf(HOST_LOG_INFO,"Upscale: deleted the upscaled textures (Settings)");
 }
+/* The loading screen's picture, 4x (loading_picture_upscaled.h): made with the same model and the path the graphics
+   take (S4g, pinned so the damage rule cannot send it to back-projection), before the catalog is built so it is the
+   first thing the import phase makes and the very first loading screen can use it. It is not a map bitmap, so it has
+   no decision or manifest record: the file's own header says what it was made from and by which recipe. A picture the
+   player's data lacks, a failure, and a stop for gameplay leave the loading screen on the original, as before. */
+static atomic_bool loading_picture_failed;
+static uint64_t loading_picture_recipe(void) {
+    struct texture_recipe_globals globals=recipe_globals();char text[256];
+    int length=snprintf(text,sizeof(text),"%s|%s|loading-picture-1|s4g|x%d",globals.model_id,globals.model_sha256,(int)LOADING_PICTURE_UPSCALED_SCALE);
+    return loading_picture_upscaled_hash((const unsigned char *)text,(size_t)length)|1;
+}
+/* gray: the original's levels (LOADING_PICTURE_UPSCALED_SOURCE_PIXELS bytes of room); file: LOADING_PICTURE_UPSCALED_FILE_BYTES of room */
+static void make_loading_picture_with(unsigned char *gray,unsigned char *file) {
+    NSString *source=[upscale_root stringByAppendingPathComponent:@"maps/loading.tga"];
+    const char *directory=cache_directory().fileSystemRepresentation;
+    uint64_t recipe=loading_picture_recipe();
+    if(!loading_picture_upscaled_read_tga(source.fileSystemRepresentation,gray))return;   /* (no picture in the data) */
+    uint64_t hash=loading_picture_upscaled_hash(gray,LOADING_PICTURE_UPSCALED_SOURCE_PIXELS);
+    if(loading_picture_upscaled_load(directory,hash,recipe,file))return;                   /* (already made) */
+    uint64_t available=storage_available(cache_directory()),projected=LOADING_PICTURE_UPSCALED_FILE_BYTES+4096;
+    if(!texture_cache_background_may_run(available,projected)){
+        host_logf(HOST_LOG_WARN,"Upscale: no loading picture yet: %llu MB of storage the system offers, under the reserve",(unsigned long long)(available>>20));
+        return;}
+    follow_priority();
+    double start=now();
+    uint8_t *rgba=malloc((size_t)LOADING_PICTURE_UPSCALED_SOURCE_PIXELS*4);if(!rgba)return;
+    for(size_t i=0;i<LOADING_PICTURE_UPSCALED_SOURCE_PIXELS;i++){rgba[i*4]=rgba[i*4+1]=rgba[i*4+2]=gray[i];rgba[i*4+3]=255;}
+    struct texture_upscale_rgba_level level={rgba,LOADING_PICTURE_UPSCALED_SOURCE_WIDTH,LOADING_PICTURE_UPSCALED_SOURCE_HEIGHT};
+    struct texture_policy_decision decision={.hash=hash,.width=LOADING_PICTURE_UPSCALED_SOURCE_WIDTH,.height=LOADING_PICTURE_UPSCALED_SOURCE_HEIGHT,
+        .kind=TEXTURE_POLICY_GRAPHIC,.result=TEXTURE_POLICY_S4G,.treatment=TEXTURE_POLICY_COLOR,.pinned=1,.scale=LOADING_PICTURE_UPSCALED_SCALE};
+    struct texture_upscale_generate_input input={decision,&texture_policy_embedded,&level,1,TEXTURE_UPSCALE_ALPHA_NONE,0,0,1};
+    struct texture_upscale_generate_output output={0};char error[512]={0};
+    dispatch_group_enter(work_group);
+    atomic_store(&work_hash,hash);atomic_store(&work_stage,"the loading picture");
+    if(!generator){footprint_before_model=footprint();generator=texture_upscale_generate_create(error,sizeof(error));}
+    int failed=!generator||texture_upscale_generate(generator,&input,&output,error,sizeof(error));
+    dispatch_group_leave(work_group);
+    free(rgba);
+    if(failed){
+        if(stop_flag)host_logf(HOST_LOG_INFO,"Upscale: the loading picture was stopped for gameplay; it is made later");
+        else {atomic_store(&loading_picture_failed,true);host_logf(HOST_LOG_WARN,"Upscale: the loading picture could not be made: %s",error[0]?error:"unknown error");}
+        return;
+    }
+    if(output.result==TEXTURE_POLICY_ORIGINAL||!output.level_count||output.levels[0].width!=LOADING_PICTURE_UPSCALED_WIDTH||
+       output.levels[0].height!=LOADING_PICTURE_UPSCALED_HEIGHT){
+        atomic_store(&loading_picture_failed,true);
+        host_logf(HOST_LOG_WARN,"Upscale: the loading picture came back as %s",output.result==TEXTURE_POLICY_ORIGINAL?"the original":"the wrong size");
+        texture_upscale_generate_free_output(&output);return;}
+    unsigned char *larger=malloc(LOADING_PICTURE_UPSCALED_PIXELS);
+    if(larger){
+        const unsigned char *levels=output.levels[0].pixels;
+        for(size_t i=0;i<LOADING_PICTURE_UPSCALED_PIXELS;i++)larger[i]=(unsigned char)((levels[i*4]+levels[i*4+1]+levels[i*4+2]+1)/3);
+        loading_picture_upscaled_encode(file,hash,recipe,larger);free(larger);
+        [NSFileManager.defaultManager createDirectoryAtPath:cache_directory() withIntermediateDirectories:YES attributes:nil error:nil];
+        if(loading_picture_upscaled_store(directory,file))host_logf(HOST_LOG_INFO,"Upscale: made the loading screen's picture, %dx%d, in %.2f s",
+            LOADING_PICTURE_UPSCALED_WIDTH,LOADING_PICTURE_UPSCALED_HEIGHT,now()-start);
+        else {atomic_store(&loading_picture_failed,true);host_logf(HOST_LOG_WARN,"Upscale: could not write the loading picture");}
+    }
+    texture_upscale_generate_free_output(&output);
+}
+static void make_loading_picture(void) {
+    if(atomic_load(&loading_picture_failed)||atomic_load(&upscale_playing))return;
+    unsigned char *gray=malloc(LOADING_PICTURE_UPSCALED_SOURCE_PIXELS),*file=malloc(LOADING_PICTURE_UPSCALED_FILE_BYTES);
+    if(gray&&file)make_loading_picture_with(gray,file);
+    free(gray);free(file);
+}
 static void pump(void) {
     @autoreleasepool {
         NSMutableArray<NSString *> *ordered=nil;
@@ -573,6 +640,8 @@ static void pump(void) {
                 why="low storage";goto done;}}
         if(atomic_exchange(&delete_requested,false))delete_cache();
         atomic_store(&finisher_failed,false);
+        make_loading_picture();
+        if(atomic_load(&upscale_playing)){why="gameplay";goto done;}
         if(atomic_exchange(&scan_pending,false)){
             catalog_ready=NO;
             /* (the Settings app's delete may have emptied the folder since the manifest was read) */

@@ -28,6 +28,7 @@ memory_watch.c detects that by write-protecting the pages.
 #include "texture_override_cache.h"
 #include "texture_record.h"
 #include "texture_upscale_state.h"
+#include "../../runtime/loading_picture_upscaled.h"
 /* render validation's name for a texture this file cannot convert, in a
 build configured with it (gpu_validate.h); nothing otherwise */
 #include "gpu_validate.h"
@@ -991,6 +992,54 @@ static const char *texture_record_directory(void)
 #endif
 	return TEXTURE_RECORD_DIRECTORY;
 }
+/* The loading screen's picture 4 times larger (source/interface/progress_bar.c; port/runtime/loading_picture_upscaled.h,
+made by port/ios/host/host_texture_upscale.m): the larger picture's gray levels, rows from the top, in memory the
+caller gives back with halo_loading_picture_upscaled_free (the game's own free is not this file's), with *scale 4; NULL, and the original picture, unless the upscaled textures are on (the profile's
+setting and the player's), the host has made the larger picture from exactly this one (gray: the original's levels,
+rows from the top, LOADING_PICTURE_UPSCALED_SOURCE_PIXELS of them) and the file is intact. */
+unsigned char *halo_loading_picture_upscaled(const unsigned char *gray, long *scale)
+{
+#ifdef HALO_IOS
+	char profile[16] = "true";
+	unsigned char *file;
+	unsigned char *levels;
+
+	if (scale)
+		*scale = 1;
+	config_default("display.upscaled_textures", profile, sizeof(profile));
+	if (!gray || !scale || strcmp(profile, "true") || !config_reload_boolean("display.upscaled_textures"))
+		return NULL;
+	file = malloc(LOADING_PICTURE_UPSCALED_FILE_BYTES);
+	if (!file)
+		return NULL;
+	if (!loading_picture_upscaled_load(texture_record_directory(),
+		loading_picture_upscaled_hash(gray, LOADING_PICTURE_UPSCALED_SOURCE_PIXELS), 0, file))
+	{
+		free(file);
+		return NULL;
+	}
+	levels = malloc(LOADING_PICTURE_UPSCALED_PIXELS);
+	if (levels)
+	{
+		memcpy(levels, file + LOADING_PICTURE_UPSCALED_HEADER_BYTES, LOADING_PICTURE_UPSCALED_PIXELS);
+		*scale = LOADING_PICTURE_UPSCALED_SCALE;
+		platform_log("loading screen: the upscaled picture, %dx%d", LOADING_PICTURE_UPSCALED_WIDTH, LOADING_PICTURE_UPSCALED_HEIGHT);
+	}
+	free(file);
+	return levels;
+#else
+	(void)gray;
+	if (scale)
+		*scale = 1;
+	return NULL;
+#endif
+}
+
+void halo_loading_picture_upscaled_free(unsigned char *levels)
+{
+	free(levels);
+}
+
 static struct texture_upscale_state texture_upscale;
 /* the upscaled textures' cache (texture_record.h) is this level's first set
 when nonzero: the records its manifest lists */
