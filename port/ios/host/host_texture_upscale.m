@@ -687,7 +687,9 @@ void host_texture_upscale_init(const char *root) {
             /* and packages copied in for HALO_TEXTURE_UPSCALE_MODEL */
             for(NSString *name in [files contentsOfDirectoryAtPath:base error:nil])
                 if([name.pathExtension isEqual:@"mlmodelc"])[files removeItemAtPath:[base stringByAppendingPathComponent:name] error:nil];
-            host_logf(HOST_LOG_INFO,"Upscale: removed the texture cache, the export and the generator log");
+            /* and the import screen's shown flag, so the next launch shows it again as a first import would */
+            [NSUserDefaults.standardUserDefaults removeObjectForKey:@"VISRUpscaleImportShown"];
+            host_logf(HOST_LOG_INFO,"Upscale: removed the texture cache, the export, the generator log and the import screen's shown flag");
             return;
         }
 #endif
