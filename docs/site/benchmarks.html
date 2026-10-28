@@ -101,9 +101,11 @@
 .bench-table thead th { border-top: 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; font-weight: 600; }
 .bench-table tbody th { font-weight: 600; }
 .bench-table td { font-variant-numeric: tabular-nums; color: var(--muted); }
-.bench-table .build-meta { display: block; margin: 0; }
+.bench-table .build-meta { display: block; margin: 0; overflow-wrap: anywhere; }
+.bench-table tbody th { min-width: 9.5em; }
+.bench-table td[data-label="Measured"] { white-space: nowrap; }
 @media (max-width: 599px) {
-  .bench-table, .bench-table tbody, .bench-table tr, .bench-table th, .bench-table td { display: block; }
+  .bench-table, .bench-table tbody, .bench-table tr, .bench-table th, .bench-table td, .bench-table caption { display: block; width: 100%; }
   .bench-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .bench-table tr { border-top: 1px solid var(--line); padding: 8px 0; }
   .bench-table th, .bench-table td { border: 0; padding: 1px 0; }
