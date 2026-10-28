@@ -95,7 +95,8 @@ function model(rows, query, suite) {
     const first = group[0];
     const entry = { port: first.port, port_name: first.port_name, version: first.version, build: first.build,
       label: first.label, date: group.map((r) => r.date).reduce((a, b) => (a > b ? a : b)),
-      url: (group.find((r) => r.release_url) || {}).release_url || "" };
+      url: (group.find((r) => r.release_url) || {}).release_url || "",
+      gpu_note: (query.no_gpu_notes || {})[first.port] || "" };
     if (suite === "overall") {
       // Which suites count is decided per chart, from the builds drawn (see drawn()); here each build keeps its own suite values.
       const parts = SUITES.map((name) => suiteValue(group, query, name));
@@ -210,6 +211,7 @@ function detailText(entry, columns) {
     }
   }
   if (parts.length) return parts.join(", ");
+  if (entry.gpu_note && columns.every((c) => c.startsWith("gpu_"))) return entry.gpu_note;
   const what = columns.length === 1 && columns[0] === "on_time_pct" ? "on-time share"
     : columns.every((c) => c.startsWith("gpu_")) ? "GPU times" : "frame times";
   return `no ${what} reported`;

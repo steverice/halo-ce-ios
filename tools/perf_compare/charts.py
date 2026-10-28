@@ -151,7 +151,8 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
     for (port, version, build), group in groups.items():
         base = {"port": port, "port_name": group[0]["port_name"], "version": version, "build": build,
                 "label": group[0]["label"], "date": max(row["date"] for row in group),
-                "url": next((row.get("release_url", "") for row in group if row.get("release_url", "")), "")}
+                "url": next((row.get("release_url", "") for row in group if row.get("release_url", "")), ""),
+                "gpu_note": query.get("no_gpu_notes", {}).get(port, "")}
         if suite == "overall":
             # Which suites count is decided per chart, from the builds drawn (see `_drawn`); here each build keeps
             # its own suite values. A build with none is listed with the first suite's reason.
@@ -319,6 +320,8 @@ def _detail_text(entry: dict, columns: list[str]) -> str:
             parts.append(f"{text} ms {description}" if unit == " ms" else f"{text}% {description}")
     if parts:
         return ", ".join(parts)
+    if entry.get("gpu_note") and all(column.startswith("gpu_") for column in columns):
+        return entry["gpu_note"]
     what = ("on-time share" if columns == ["on_time_pct"] else "GPU times"
             if all(column.startswith("gpu_") for column in columns) else "frame times")
     return f"no {what} reported"
