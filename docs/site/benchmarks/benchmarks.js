@@ -124,6 +124,20 @@ function model(rows, query, suite) {
   return { overall: suite === "overall", entries, box: reference ? reference.host : "" };
 }
 
+// The builds list: one group per port in the model's order. `primary` is the port's newest measured build (ticked by default),
+// or its newest build when none has data; `others` are the rest, offered as other versions. Mirrors build_groups in charts.py.
+function buildGroups(built) {
+  const groups = new Map();
+  for (const entry of built.entries) {
+    if (!groups.has(entry.port)) groups.set(entry.port, { port: entry.port, port_name: entry.port_name, items: [] });
+    groups.get(entry.port).items.push(entry);
+  }
+  return [...groups.values()].map(({ items, ...group }) => {
+    const primary = items.find((e) => e.default) || items[0];
+    return { ...group, primary, others: items.filter((e) => e !== primary) };
+  });
+}
+
 function pool(built, selected) {
   return built.entries.filter((e) => e.value !== null && (selected ? selected.has(entryKey(e)) : e.default));
 }
@@ -256,7 +270,7 @@ function plainReason(reason, reasons) {
   return reason;
 }
 
-if (typeof module !== "undefined") module.exports = { captionParts, headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, entryKey, SUITES };
+if (typeof module !== "undefined") module.exports = { captionParts, headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, entryKey, buildGroups, SUITES };
 
 // ---- Page ----
 function readHash() {
@@ -401,28 +415,44 @@ function drawLegend(node, spec, count) {
   });
 }
 
+// One build's row. A build with no data for the chart is dimmed and disabled, tagged briefly, with the full reason in the
+// row's tooltip and for screen readers. Mirrors build_item in site_page.py.
+function buildItem(entry, spec, state) {
+  const key = entryKey(entry);
+  const input = el("input", { type: "checkbox", value: key });
+  const name = el("span", { class: "build-name" }, entry.url ? el("a", { href: entry.url, rel: "noopener" }, entry.label) : entry.label);
+  const meta = el("span", { class: "build-meta" }, `build ${entry.build || "unknown"}, ${entry.date}`);
+  if (entry.value === null) {
+    input.disabled = true;
+    const tag = entry.kind === "not_supported" ? "not supported" : "not measured here";
+    const reason = plainReason(entry.reason, state.reasons);
+    return el("label", { class: "build off", title: reason }, input, " ", name, " ", meta, " ",
+      el("span", { class: "tag", "aria-hidden": "true" }, tag), el("span", { class: "sr-only" }, `${tag}: ${reason}`));
+  }
+  input.checked = state.selected[spec.slug].has(key);
+  input.addEventListener("change", () => {
+    if (input.checked) state.selected[spec.slug].add(key); else state.selected[spec.slug].delete(key);
+    state.refresh(spec, false);
+  });
+  return el("label", { class: "build" }, input, " ", name, " ", meta);
+}
+
+// Built when the suite changes, not on every tick, so keyboard focus and the open disclosures stay where they are.
 function drawList(list, spec, built, state) {
-  const reasons = state.reasons;
   list.hidden = !built.entries.length;
   list.replaceChildren(el("legend", {}, "Builds"));
-  for (const entry of built.entries) {
-    const key = entryKey(entry);
-    const detail = `build ${entry.build || "unknown"}, ${entry.date}`;
-    const input = el("input", { type: "checkbox", value: key });
-    input.checked = state.selected[spec.slug].has(key);
-    if (entry.value === null) {
-      input.disabled = true;
-      input.checked = false;
+  for (const group of buildGroups(built)) {
+    const box = el("div", { class: "build-group" }, buildItem(group.primary, spec, state));
+    if (group.others.length) {
+      const count = group.others.length;
+      const id = spec.slug + "/" + group.port;
+      const more = el("details", { class: "older", "data-port": group.port },
+        el("summary", {}, `${count} other version${count === 1 ? "" : "s"}`), ...group.others.map((e) => buildItem(e, spec, state)));
+      more.open = state.open.has(id) || group.others.some((e) => state.selected[spec.slug].has(entryKey(e)));
+      more.addEventListener("toggle", () => { if (more.open) state.open.add(id); else state.open.delete(id); });
+      box.append(more);
     }
-    const word = entry.kind === "not_supported" ? "Not supported" : "Not measured";
-    const name = entry.url ? el("a", { href: entry.url, rel: "noopener" }, entry.label) : entry.label;
-    const rest = entry.value === null ? ` (${detail}). ${word}: ${plainReason(entry.reason, reasons)}` : ` (${detail})`;
-    const label = el("label", { class: entry.value === null ? "off" : "" }, input, " ", name, rest);
-    input.addEventListener("change", () => {
-      if (input.checked) state.selected[spec.slug].add(key); else state.selected[spec.slug].delete(key);
-      state.refresh(spec);
-    });
-    list.append(label);
+    list.append(box);
   }
 }
 
@@ -435,7 +465,7 @@ async function start() {
   const rows = parseCsv(text);
   const params = readHash();
   const state = { suite: SUITES.concat("overall").includes(params.get("suite")) ? params.get("suite") : DEFAULT_SUITE,
-    models: {}, selected: {}, refresh: null, reasons };
+    models: {}, selected: {}, refresh: null, reasons, open: new Set() };
   const dark = window.matchMedia("(prefers-color-scheme: dark)");
   const theme = () => mermaid.initialize(mermaidConfig(dark.matches));
   theme();
@@ -450,10 +480,10 @@ async function start() {
         ? requested.split(",").filter(Boolean) : built.entries.filter((e) => e.default).map(entryKey));
     }
   }
-  async function refresh(spec) {
+  async function refresh(spec, rebuildList = true) {
     const built = state.models[spec.slug], section = sections[spec.slug];
     await drawChart(section.querySelector(".bench-chart"), spec, built, state.suite, state.selected[spec.slug]);
-    drawList(section.querySelector(".bench-rows"), spec, built, state);
+    if (rebuildList) drawList(section.querySelector(".bench-rows"), spec, built, state);
     drawLegend(section.querySelector(".bench-legend"), spec,
       !built.entries.length ? 0 : drawn(built, state.selected[spec.slug]).some((e) => e.value.low !== null) ? 2 : 1);
     section.querySelector(".bench-caption").replaceChildren(...captionParts(built, state.selected[spec.slug], spec.query.details, spec.query.windows)

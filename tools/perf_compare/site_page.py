@@ -36,13 +36,28 @@ def head_tags(metadata: dict[str, str]) -> dict[str, str]:
 
 STYLE = """
 .page { max-width: 1160px; }
-.bench-bar { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; border: 1px solid var(--line); padding: 10px 14px; margin: 0 0 24px;
-  position: sticky; top: 0; z-index: 10; background: var(--bg); box-shadow: 0 -16px 0 var(--bg); }
-.bench-bar legend { font-weight: 600; padding: 0 6px; }
-.bench-bar label { cursor: pointer; }
-.bench { margin: 0 0 40px; }
-.bench-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
-@media (min-width: 900px) { .bench-grid { grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr); } }
+.page > h1 { margin: 12px 0 14px; }
+.page > p { max-width: 70ch; color: var(--muted); font-size: 0.95rem; line-height: 1.55; margin-bottom: 10px; }
+.page > p:first-of-type { color: var(--ink); }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Controls: the suite switch is a row of pills; the radios stay in the tab order behind them. */
+.bench-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; border: 0; border-bottom: 1px solid var(--line);
+  padding: 10px 0; margin: 18px 0 8px; background: var(--bg); position: sticky; top: 0; z-index: 10; }
+.bench-bar legend { float: left; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0; margin-right: 10px; line-height: 2.2; }
+.bench-bar label { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line);
+  border-radius: 999px; font-size: 0.9rem; cursor: pointer; user-select: none; }
+.bench-bar label:hover { border-color: var(--accent); }
+.bench-bar input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.bench-bar label:has(input:checked) { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+.bench-bar label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 600px) { .bench-bar { position: static; } .bench-bar legend { float: none; width: 100%; line-height: 1.4; } }
+
+.bench { margin: 0 0 24px; padding-top: 36px; margin-top: 36px; }
+.bench > h2 { font-size: 1.5rem; margin-bottom: 8px; }
+.bench > p { max-width: 75ch; color: var(--muted); font-size: 0.95rem; line-height: 1.55; }
+.bench-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px 32px; align-items: start; margin-top: 18px; }
+@media (min-width: 900px) { .bench-grid { grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); } }
 /* The device frames come from style.css; only the screen's content box is defined here. */
 .bench-media { min-width: 0; }
 .device .bench-chart { display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden;
@@ -57,19 +72,42 @@ STYLE = """
 .device-glass .bench-chart svg { width: 100%; height: 100%; }
 .device-glass .bench-empty { padding: 4px 10px; text-align: center; font-size: clamp(0.7rem, 2.6vw, 1rem); line-height: 1.3; }
 .bench-chart svg, .bench-chart img { display: block; flex: 0 1 auto; min-width: 0; width: 100%; max-width: 100%; height: auto; }
-.bench-rows { border: 1px solid var(--line); padding: 8px 14px 12px; margin: 0; }
-.bench-rows legend { font-weight: 600; padding: 0 6px; }
-.bench-rows label { display: block; margin: 6px 0; line-height: 1.35; }
-.bench-rows label.off { color: var(--muted); }
-.bench-legend, .bench-direction, .bench-caption { color: var(--muted); font-size: 0.9rem; margin: 10px 0 0; }
-.bench-legend { color: var(--ink); font-size: 1rem; }
-.swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 2px; margin-right: 0.15em; vertical-align: -0.1em; }
-.swatch.avg { background: var(--chart-avg); }
-.swatch.low { background: var(--chart-low); }
 .bench-chart:has(img) { background: #fff; }
 @media (prefers-color-scheme: dark) { .device .bench-chart { background: #10232b; color: #e8f6fa; } }
-.bench-empty { color: inherit; margin: 0; padding: 24px 12px; }
-.method { max-width: 760px; margin-inline: auto; }
+.bench-empty { color: inherit; margin: 0; padding: 24px 12px; font-size: 0.95rem; }
+.bench-legend, .bench-direction, .bench-caption { margin: 12px 0 0; font-size: 0.85rem; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.bench-legend { color: var(--ink); font-size: 0.9rem; }
+.swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 2px; margin: 0 0.2em 0 0.6em; vertical-align: -0.1em; }
+.swatch:first-child { margin-left: 0; }
+.swatch.avg { background: var(--chart-avg); }
+.swatch.low { background: var(--chart-low); }
+
+/* Builds: one row per port, its other versions folded under it. */
+.bench-rows { min-width: 0; margin: 0; padding: 14px 16px 10px; border: 1px solid var(--line); border-radius: 12px; }
+.bench-rows legend { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 6px; }
+.build-group { padding: 8px 0; border-top: 1px solid var(--line); }
+.build-group:first-of-type { border-top: 0; }
+.build { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; row-gap: 0; padding: 4px 0; line-height: 1.35; cursor: pointer; }
+.build input { flex: none; align-self: center; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.build-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.build-meta { flex: 1 1 100%; margin-left: 26px; font-size: 0.8rem; color: var(--muted); }
+.build-name + .build-meta { margin-top: -1px; }
+.build.off { cursor: default; color: var(--muted); }
+.build.off .build-name { font-weight: 500; }
+.build.off input { opacity: 0.5; }
+.tag { margin-left: 26px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.72rem; line-height: 1.6; color: var(--muted); }
+.older { margin: 2px 0 0 26px; }
+.older summary { cursor: pointer; font-size: 0.85rem; color: var(--accent); padding: 4px 0; min-height: 28px; list-style-position: outside; }
+.older[open] summary { margin-bottom: 2px; }
+.older .build-meta, .older .tag { margin-left: 26px; }
+.older .build { padding-left: 0; }
+
+.method { max-width: 760px; margin-inline: auto; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); }
+.method h2 { font-size: 1.5rem; }
+.method h3 { font-size: 1.05rem; margin: 28px 0 10px; }
+.method p, .method li { font-size: 0.95rem; line-height: 1.6; }
+.method li { margin-bottom: 10px; }
+.method code { white-space: normal; overflow-wrap: anywhere; }
 """
 
 
@@ -113,6 +151,36 @@ def anchor(text: str, url: str) -> str:
     return (f'<a href="{escape(url)}" rel="noopener">{escape(text)}</a>' if url else escape(text))
 
 
+def build_item(entry: dict, reasons: dict) -> str:
+    """One build's checkbox row. A build with no data for the chart is dimmed and disabled, tagged briefly, with the full
+    reason in the row's tooltip and for screen readers. Mirrored by `buildItem` in benchmarks.js."""
+    meta = f"build {entry['build'] or 'unknown'}, {entry['date']}"
+    link = anchor(entry["label"], entry.get("url", ""))
+    key = escape(charts.entry_key(entry))
+    if entry["value"] is not None:
+        checked = " checked" if entry["default"] else ""
+        return (f'<label class="build"><input type="checkbox" value="{key}"{checked}> '
+                f'<span class="build-name">{link}</span> <span class="build-meta">{escape(meta)}</span></label>')
+    tag = "not supported" if entry["kind"] == "not_supported" else "not measured here"
+    reason = charts.plain_reason(entry["reason"], reasons)
+    return (f'<label class="build off" title="{escape(reason, quote=True)}"><input type="checkbox" value="{key}" disabled> '
+            f'<span class="build-name">{link}</span> <span class="build-meta">{escape(meta)}</span> '
+            f'<span class="tag" aria-hidden="true">{tag}</span><span class="sr-only">{tag}: {escape(reason)}</span></label>')
+
+
+def builds_list(built: dict, reasons: dict) -> str:
+    """The Builds box: one group per port with its newest measured build, the port's other versions folded away."""
+    parts = ["<legend>Builds</legend>"]
+    for group in charts.build_groups(built):
+        parts.append('<div class="build-group">' + build_item(group["primary"], reasons))
+        if group["others"]:
+            count = len(group["others"])
+            parts.append(f'<details class="older" data-port="{escape(group["port"])}"><summary>{count} other version{"" if count == 1 else "s"}</summary>'
+                         + "".join(build_item(e, reasons) for e in group["others"]) + "</details>")
+        parts.append("</div>")
+    return "".join(parts)
+
+
 def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
     built = charts.model(rows, spec["query"], suite)
     name = slug(spec)
@@ -124,18 +192,7 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
                  f'per build, {escape(charts.SUITE_NAMES[suite])} suite">')
     else:
         chart = f"<pre>{escape(text)}</pre>"
-    items = []
-    for entry in built["entries"]:
-        detail = f"build {entry['build'] or 'unknown'}, {entry['date']}"
-        if entry["value"] is None:
-            word = "Not supported" if entry["kind"] == "not_supported" else "Not measured"
-            items.append(f'<label class="off"><input type="checkbox" value="{escape(charts.entry_key(entry))}" disabled> '
-                         f'{anchor(entry["label"], entry.get("url", ""))} ({escape(detail)}). {word}: {escape(charts.plain_reason(entry["reason"], reasons))}</label>')
-        else:
-            checked = " checked" if entry["default"] else ""
-            items.append(f'<label><input type="checkbox" value="{escape(charts.entry_key(entry))}"{checked}> '
-                         f'{anchor(entry["label"], entry.get("url", ""))} ({escape(detail)})</label>')
-    rows_html = f'<legend>Builds</legend>{"".join(items)}' if items else "<legend>Builds</legend>"
+    rows_html = builds_list(built, reasons)
     swatches = ""
     if built["entries"]:
         swatches = "  ".join(f'<span class="swatch {kind}" aria-hidden="true"></span> {escape(label)}'
@@ -148,7 +205,7 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
 <p class="bench-legend">{swatches}</p>
 <p class="bench-direction">{escape(charts.direction_note(spec, built))}</p>
 <p class="bench-caption">{"".join(anchor(text, url) for text, url in charts.caption_parts(built, None, spec["query"].get("details"), spec["query"].get("windows")))}</p></div>
-<fieldset class="bench-rows"{"" if items else " hidden"}>{rows_html}</fieldset>
+<fieldset class="bench-rows"{"" if built["entries"] else " hidden"}>{rows_html}</fieldset>
 </div>
 </section>"""
 

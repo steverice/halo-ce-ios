@@ -168,6 +168,37 @@ def test_model_ticks_the_newest_build_of_each_port_and_lists_the_rest_with_reaso
     assert by_key["visr@0.5.1@7"]["value"] == {"avg": pytest.approx(547.7226, abs=1e-3), "low": pytest.approx(200.0), "details": {}, "windows": ["a10", "b30"], "rows": by_key["visr@0.5.1@7"]["value"]["rows"]}
 
 
+def test_builds_group_by_port_with_the_newest_measured_build_first_and_the_rest_folded_away():
+    built = charts.model(snapshot_rows(), QUERY, "campaign")
+    groups = {g["port"]: g for g in charts.build_groups(built)}
+    visr = groups["visr"]
+    assert charts.entry_key(visr["primary"]) == "visr@0.5.1@7" and visr["primary"]["default"]
+    assert [charts.entry_key(e) for e in visr["others"]] == ["visr@main@5"]
+    assert not any(e["default"] for g in groups.values() for e in g["others"])
+    assert sum(1 + len(g["others"]) for g in groups.values()) == len(built["entries"])
+    assert [g["port"] for g in charts.build_groups(built)] == list(dict.fromkeys(e["port"] for e in built["entries"]))
+
+
+def test_a_port_with_no_measured_build_is_listed_once_by_its_newest_build():
+    built = charts.model(snapshot_rows(), QUERY, "campaign")
+    web = next(g for g in charts.build_groups(built) if g["port"] == "opence-web")
+    assert web["primary"]["value"] is None and not web["primary"]["default"]
+
+
+def test_builds_list_shows_one_row_per_port_dims_unmeasured_builds_and_keeps_reasons_in_the_tooltip():
+    reasons = charts.load_reasons()
+    built = charts.model(snapshot_rows(), QUERY, "campaign")
+    html = site_page.builds_list(built, reasons)
+    assert html.count('class="build-group"') == len(charts.build_groups(built))
+    assert 'type="checkbox" value="visr@0.5.1@7" checked' in html
+    assert 'type="checkbox" value="visr@main@5">' in html and "<details" in html
+    off = next(e for e in built["entries"] if e["value"] is None)
+    item = site_page.build_item(off, reasons)
+    assert 'class="build off"' in item and "disabled" in item and "not measured here" in item
+    assert f'title="{charts.plain_reason(off["reason"], reasons)}"' in item
+    assert "Not measured:" not in item
+
+
 def test_suites_without_data_show_not_measured_rows():
     built = charts.model(snapshot_rows(), QUERY, "multiplayer")
     assert all(e["value"] is None for e in built["entries"])
@@ -357,7 +388,8 @@ const rows = m.parseCsv(fs.readFileSync(process.argv[1] + '/docs/benchmarks/resu
 const out = {};
 for (const spec of JSON.parse(fs.readFileSync(0, 'utf8'))) for (const suite of m.SUITES.concat(['overall'])) {
   const built = m.model(rows, spec.query, suite);
-  out[spec.slug + '/' + suite] = [m.chartSource(spec, built, suite), m.captionText(built, null, spec.query.details, spec.query.windows), built.entries.map((e) => [m.entryKey(e), e.default, e.kind, e.reason])];
+  out[spec.slug + '/' + suite] = [m.chartSource(spec, built, suite), m.captionText(built, null, spec.query.details, spec.query.windows), built.entries.map((e) => [m.entryKey(e), e.default, e.kind, e.reason]),
+    m.buildGroups(built).map((g) => [g.port, m.entryKey(g.primary), g.others.map(m.entryKey)])];
   const firstKey = built.entries.length ? new Set([m.entryKey(built.entries[0])]) : new Set();
   out[spec.slug + '/' + suite + '/first'] = [m.chartSource(spec, built, suite, firstKey), m.captionText(built, firstKey, spec.query.details, spec.query.windows)];
 }
@@ -370,7 +402,8 @@ console.log(JSON.stringify(out));
         for suite in charts.SUITE_CHOICES:
             built = charts.model(rows, item["query"], suite)
             expected = [charts.source(item, built, suite), charts.caption(built, None, item["query"].get("details"), "", item["query"].get("windows")),
-                        [[charts.entry_key(e), e["default"], e["kind"], e["reason"]] for e in built["entries"]]]
+                        [[charts.entry_key(e), e["default"], e["kind"], e["reason"]] for e in built["entries"]],
+                        [[g["port"], charts.entry_key(g["primary"]), [charts.entry_key(e) for e in g["others"]]] for g in charts.build_groups(built)]]
             assert browser[f"{site_page.slug(item)}/{suite}"] == expected
             first = {charts.entry_key(built["entries"][0])} if built["entries"] else set()
             assert browser[f"{site_page.slug(item)}/{suite}/first"] == [

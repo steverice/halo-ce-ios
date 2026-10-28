@@ -180,6 +180,21 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
     return {"overall": suite == "overall", "entries": entries, "box": next((r["host"] for r in platform_rows if r["reference_box"].lower() == "true"), "")}
 
 
+def build_groups(built: dict) -> list[dict]:
+    """The builds list, one group per port in the model's order. A group's `primary` is the build ticked by default
+    (the port's newest measured one), or the newest build when none has data; `others` are the port's remaining
+    builds, newest first, offered as older versions. Mirrored by `buildGroups` in benchmarks.js."""
+    groups: dict[str, dict] = {}
+    for entry in built["entries"]:
+        groups.setdefault(entry["port"], {"port": entry["port"], "port_name": entry["port_name"], "entries": []})["entries"].append(entry)
+    result = []
+    for group in groups.values():
+        items = group.pop("entries")
+        primary = next((e for e in items if e["default"]), items[0])
+        result.append({**group, "primary": primary, "others": [e for e in items if e is not primary]})
+    return result
+
+
 def overall_suites(pool: list[dict]) -> list[str]:
     """The suites Overall covers on a chart: every suite at least one drawn build has complete. A build missing one
     of them is left out of Overall (see `overall_split`), so one incomplete port does not shrink the set for the rest."""
