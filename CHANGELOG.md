@@ -1,10 +1,51 @@
-## Unreleased
+## visr-v0.6.3 (2026-10-28)
+
+### Summary
+
+- Loading screen: with upscaled textures turned on, the loading picture should now look sharper instead of stretched. If upscaling is off, you get the original picture.
+- Audio during calls: game sound should stay quiet while a phone call, Siri, or an alarm is active. It should only come back once that interruption ends.
+- Headphones: if your headphones or AirPods disconnect, sound should reopen on the current output without waiting for a call to end.
+- Audio routing: try connecting an HDMI display, AirPlay, USB audio, or CarPlay mid-game. Sound should return on the new output instead of staying silent.
+- External display: on iOS and tvOS 27, gameplay on an external 60 Hz monitor should feel steadier, with less drift between smooth and choppy.
+- Texture cache: after you clear the upscaled texture cache, the "Upscaling textures" import screen should show again.
+- Loading chant: the fade at the end of the loading chant is restored.
+
+iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
+
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
+
+VISR automatically sends game performance data to improve the game. Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. Performance diagnostics are required in builds with performance reports enabled. Sharing this data is part of testing; leaving the beta stops it.
 
 ### Full changelog
 
+### feat
+
+- **upscale**: draw the loading screen's picture 4x larger when the on-device upscaler made it — the 320 by 240 gray picture from `maps/loading.tga` was never upscaled and was stretched about 4.5x on an iPhone 17 Pro; the upscaler pump now makes it first (before the catalog is built, so before the import phase's menu textures and the first loading screen) with the same S4g model and the graphics path (pinned, no back-projection), and keeps it as `loading-picture.bin` in the texture cache's folder, headed by hashes of its source picture and recipe (`loading_picture_upscaled.h`), so the cache's size, the Settings delete and `HALO_TEXTURE_UPSCALE_CLEAN` cover it. `progress_bar_load_loading_texture` draws it, in a 1280 by 960 texture with texture coordinates scaled to cover the same area, only when the profile and the player's switch have upscaled textures on and the file is intact and made from the picture being drawn; otherwise the original, as before. Tint, layout, fade and pacing are unchanged.
+
 ### fix
 
-- **loading**: fade the loading chant out under the level's first sound instead of cutting it — the level's music and ambience fade in over about 250 ms from its first frame, and `progress_bar_eachframe` stopped the chant outright about 75 ms in, leaving the mix about 10 dB down for about 120 ms at the handover; the chant now fades from its last volume to silence over 400 ms, then stops
+- **audio**: end the interruption hold only on its end, and reopen after a route disconnect — becoming active during a call (Control Center, the app switcher, back from the Phone app) cleared `audio_interrupted` and let the stall check bring game sound back over the call, so only `AVAudioSessionInterruptionTypeEnded` clears it now (a flag left set only turns the stall check off); a `Began` with `AVAudioSessionInterruptionReasonRouteDisconnected` (iOS 17, headphones or AirPods dropping) no longer holds anything and instead asks for a reopen on the current route, unless a call is already holding; the decision is `host_audio_interruption` in `host_audio_stall.h`, with probe cases
+- **audio**: leave system interruptions and plain re-routes to iOS — the stall check from `87d791cea` reopened the sound device 1.5 s into a phone call, Siri or an alarm, bringing game sound back over it or retrying every 30 s, so `audio_interrupted` (set on `AVAudioSessionInterruptionTypeBegan`, cleared on its end or `UIApplicationDidBecomeActiveNotification`) now holds off the stall check and `debug.audio_reopen_test`, and `host_sdl_audio_touch` restarts the 1.5 s once it clears; a route change reopens only when it involves an HDMI, AirPlay, USB audio, DisplayPort or CarPlay output, changes the rate or channel count, or follows a recovery, so headphones and Bluetooth keep the running queue iOS moves itself; the stall schedule (`host_audio_stall.h`) waits 0, 3, 6, 12, then 30 s as documented, with probes for all three
+- **audio**: bring sound back after a route change at any time — `host_sdl_audio_route_changed` opened each new stream before closing the old one, so SDL kept the same physical device and AudioQueue and a queue the system had stopped (an HDMI display connecting mid-game, an interruption) stayed silent through every later reopen and output pick; every stream is now closed before any reopens, so the device is recreated on the system's current route, the audio session is made active again first, a playing stream whose device has made no callback for 1.5 s gets the same reopen (backing off from 3 s to every 30 s while it stays stopped), and `debug.audio_reopen_test` runs it on a timer for devices that cannot be replugged
+- **external**: pace frames on the external display's own refreshes — `pacing_start` made the pacing `CADisplayLink` with `-[UIScreen displayLinkWithTarget:selector:]`, which iOS 27 deprecates in favor of the window scene's link and does not document as following a scene accessory's display, so frames presented to a 60 Hz monitor could be held against another clock and drift between smooth and choppy; on iOS and tvOS 27 the link now comes from `-[UIWindowScene displayLinkWithTarget:selector:]` on the scene the renderer presents in (`host_external_scene`), with the screen's link kept for earlier systems, and the log reports the rate the link actually runs at after each output change
+- **benchmarks**: word the web build's missing console plainly and render the page — the committed web rows carried a reason with no plain sentence, which failed the Tooling test, and the page had not been re-rendered after the rebase
+- **upscale**: have the development clean hook clear the import screen's shown flag — `HALO_TEXTURE_UPSCALE_CLEAN` emptied the cache but left `VISRUpscaleImportShown`, so a cleaned device never showed the "Upscaling textures" import screen again and background upscaling refilled the cache unseen at the menu
+
+### build
+
+- **benchmark**: bind the 20-case tester catalog to the 0.6.3 guest at its own feed — `docs/site/packs/tester/recordings-c2ce7f3b23742865e51ad2716fd5dd15ecfe14c68c205cea5ba5be33e3d00b89.json` is the 0.6.2 catalog with its trimmed recordings, signed as sequence 1793178642 with compatibility `benchmark-catalog-1:c2ce7f3b23742865e51ad2716fd5dd15ecfe14c68c205cea5ba5be33e3d00b89`, which 0.6.3 builds read; the older feeds stay byte-identical, and `docs/site/packs/tester/publication.json` and `tools/test_pages_main_assets.py` name the new envelope's SHA-256
+- **release**: publish the signed latest-release record for 0.6.2 — `docs/site/packs/tester/latest.json` is sequence 1793176604 under `latest-release-1` and names 0.6.2 for iOS, tvOS, visionOS and macOS; `docs/site/packs/tester/publication.json` names its SHA-256
+
+### revert
+
+- restore the loading-chant fade after the 0.6.2 cut — reverts `bd6b95dd9`, so main's tree is `f56c5695d`'s again plus the `visr-v0.6.2` release metadata (`CHANGELOG.md`, `.release/current.json`)
+
+### docs
+
+- **changelog**: list only the tagged work under 0.6.2 and the loading-chant fade as unreleased — the generated `visr-v0.6.2` section named the fade (`f56c5695d`) and its hold revert, which the tagged tree does not contain; the fade now sits under Unreleased for 0.6.3, and the 0.6.2 summary is the What to Test text the builds carry
+- **benchmarks**: add VISR 0.6.1 Apple TV HD and Vision Pro rows for the seven cross-port windows and master-chef 1.0.3 `c10` on the Vision Pro — snapshot refreshed from the public sheet, charts re-rendered
+- **benchmarks**: add OpenCE web build-314 on the M6 Mac mini — Campaign c10 and b30 at 2560×1920, capped by the browser's display sync
+- **benchmarks**: add OpenCE web build-314 on the M4 Mac mini — Campaign c10 and b30 at 2560×1920, capped by the browser's display sync, with Combat and Cutscenes marked not measured because the web build has no console
 
 ## visr-v0.6.2 (2026-10-28)
 
