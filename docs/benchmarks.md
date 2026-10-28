@@ -115,17 +115,17 @@ config:
 ---
 xychart-beta horizontal
     title "Campaign: fps at display rate, M2 Vision Pro"
-    x-axis "Port and version" ["VISR 0.6.0", "master-chef 1.0.3"]
+    x-axis "Port and version" ["VISR 0.6.1", "master-chef 1.0.3"]
     y-axis "Frames per second" 0 --> 150
-    bar [89.4, 29.8]
-    bar [76.8, 0]
+    bar [89.5, 29.8]
+    bar [89.5, 0]
 ```
 
 🟦 Average fps 🟨 1% low fps
 
 Higher is better.
 
-M2 Vision Pro. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; 11.8 ms 95th-percentile frame time, 94.1% of frames on time; c10 not measured yet); [master-chef 1.0.3](https://github.com/mitchaiet/master-chef/releases/tag/v1.0.3) (build 103, measured 2026-10-28; no frame times reported).
+M2 Vision Pro. VISR 0.6.1 (Vision Pro) (build 20261027.174748, measured 2026-10-27; 11.1 ms 95th-percentile frame time, 99.8% of frames on time; a10 not measured yet); [master-chef 1.0.3](https://github.com/mitchaiet/master-chef/releases/tag/v1.0.3) (build 103, measured 2026-10-28; no frame times reported).
 
 <!-- END CHARTS -->
 

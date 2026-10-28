@@ -87,20 +87,48 @@ STYLE = """
 .bench-rows legend { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 6px; }
 .build-group { padding: 8px 0; border-top: 1px solid var(--line); }
 .build-group:first-of-type { border-top: 0; }
-.build { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; row-gap: 0; padding: 4px 0; line-height: 1.35; cursor: pointer; }
-.build input { flex: none; align-self: center; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.build { padding: 4px 0; line-height: 1.35; }
+.build-label { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; cursor: pointer; }
+.build-label input { flex: none; align-self: center; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 .build-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-.build-meta { flex: 1 1 100%; margin-left: 26px; font-size: 0.8rem; color: var(--muted); }
-.build-name + .build-meta { margin-top: -1px; }
-.build.off { cursor: default; color: var(--muted); }
+.build-meta { flex: 1 1 100%; margin-left: 26px; font-size: 0.8rem; font-weight: 400; color: var(--muted); }
+.build.off { color: var(--muted); }
+.build.off .build-label { cursor: default; }
 .build.off .build-name { font-weight: 500; }
 .build.off input { opacity: 0.5; }
-.tag { margin-left: 26px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.72rem; line-height: 1.6; color: var(--muted); }
+.why { margin: 2px 0 0 26px; font-size: 0.8rem; }
+.why summary.tag { display: inline-block; cursor: pointer; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; line-height: 1.7; color: var(--muted); list-style: none; }
+.why summary.tag::-webkit-details-marker { display: none; }
+.why summary.tag::after { content: " \\25BE"; }
+.why[open] summary.tag::after { content: " \\25B4"; }
+.why summary.tag:hover { border-color: var(--accent); color: var(--ink); }
+.why p { margin: 6px 0 4px; line-height: 1.45; color: var(--muted); }
 .older { margin: 2px 0 0 26px; }
-.older summary { cursor: pointer; font-size: 0.85rem; color: var(--accent); padding: 4px 0; min-height: 28px; list-style-position: outside; }
+.older summary { cursor: pointer; font-size: 0.85rem; color: var(--accent); padding: 4px 0; min-height: 28px; }
 .older[open] summary { margin-bottom: 2px; }
-.older .build-meta, .older .tag { margin-left: 26px; }
 .older .build { padding-left: 0; }
+
+/* Per-build figures under each chart. On a phone each row becomes a small card. */
+.bench-caption { overflow-x: visible; }
+.bench-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; line-height: 1.4; margin-top: 12px; }
+.bench-table caption { text-align: left; color: var(--muted); padding-bottom: 8px; caption-side: top; }
+.bench-table th, .bench-table td { text-align: left; vertical-align: top; padding: 7px 10px 7px 0; border-top: 1px solid var(--line); font-weight: 400; }
+.bench-table thead th { border-top: 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; font-weight: 600; }
+.bench-table tbody th { font-weight: 600; }
+.bench-table td { font-variant-numeric: tabular-nums; color: var(--muted); }
+.bench-table .build-meta { display: block; margin: 0; }
+@media (max-width: 599px) {
+  .bench-table, .bench-table tbody, .bench-table tr, .bench-table th, .bench-table td { display: block; }
+  .bench-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .bench-table tr { border-top: 1px solid var(--line); padding: 8px 0; }
+  .bench-table th, .bench-table td { border: 0; padding: 1px 0; }
+  .bench-table td:empty { display: none; }
+  .bench-table td::before { content: attr(data-label) ": "; color: var(--ink); font-weight: 600; }
+}
+
+/* The suite bar is sticky, so jump targets keep clear of it. */
+h2[id], .bench { scroll-margin-top: 76px; }
+@media (max-width: 600px) { h2[id], .bench { scroll-margin-top: 12px; } }
 
 .method { max-width: 760px; margin-inline: auto; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); }
 .method h2 { font-size: 1.5rem; }
@@ -152,33 +180,50 @@ def anchor(text: str, url: str) -> str:
 
 
 def build_item(entry: dict, reasons: dict) -> str:
-    """One build's checkbox row. A build with no data for the chart is dimmed and disabled, tagged briefly, with the full
-    reason in the row's tooltip and for screen readers. Mirrored by `buildItem` in benchmarks.js."""
+    """One build's row. A build with no data for the chart is dimmed and disabled, tagged briefly; the tag opens the full
+    reason in place (a `details` element, so it works by keyboard, by touch and without scripts), and the row's tooltip
+    carries it too. Mirrored by `buildItem` in benchmarks.js."""
     meta = f"build {entry['build'] or 'unknown'}, {entry['date']}"
     link = anchor(entry["label"], entry.get("url", ""))
     key = escape(charts.entry_key(entry))
     if entry["value"] is not None:
         checked = " checked" if entry["default"] else ""
-        return (f'<label class="build"><input type="checkbox" value="{key}"{checked}> '
-                f'<span class="build-name">{link}</span> <span class="build-meta">{escape(meta)}</span></label>')
+        return (f'<div class="build"><label class="build-label"><input type="checkbox" value="{key}"{checked}> '
+                f'<span class="build-name">{link}</span> <span class="build-meta">{escape(meta)}</span></label></div>')
     tag = "not supported" if entry["kind"] == "not_supported" else "not measured here"
     reason = charts.plain_reason(entry["reason"], reasons)
-    return (f'<label class="build off" title="{escape(reason, quote=True)}"><input type="checkbox" value="{key}" disabled> '
-            f'<span class="build-name">{link}</span> <span class="build-meta">{escape(meta)}</span> '
-            f'<span class="tag" aria-hidden="true">{tag}</span><span class="sr-only">{tag}: {escape(reason)}</span></label>')
+    return (f'<div class="build off" title="{escape(reason, quote=True)}"><label class="build-label"><input type="checkbox" value="{key}" disabled> '
+            f'<span class="build-name">{link}</span> <span class="build-meta">{escape(meta)}</span></label>'
+            f'<details class="why"><summary class="tag">{tag}</summary><p>{escape(reason)}</p></details></div>')
 
 
 def builds_list(built: dict, reasons: dict) -> str:
-    """The Builds box: one group per port with its newest measured build, the port's other versions folded away."""
+    """The Builds box: one group per port with its newest version, the port's other versions folded away."""
     parts = ["<legend>Builds</legend>"]
     for group in charts.build_groups(built):
         parts.append('<div class="build-group">' + build_item(group["primary"], reasons))
         if group["others"]:
             count = len(group["others"])
-            parts.append(f'<details class="older" data-port="{escape(group["port"])}"><summary>{count} other version{"" if count == 1 else "s"}</summary>'
+            opened = " open" if any(e["default"] for e in group["others"]) else ""
+            parts.append(f'<details class="older" data-port="{escape(group["port"])}"{opened}><summary>{count} other version{"" if count == 1 else "s"}</summary>'
                          + "".join(build_item(e, reasons) for e in group["others"]) + "</details>")
         parts.append("</div>")
     return "".join(parts)
+
+
+def caption_html(table: dict | None) -> str:
+    """The table under a chart. Mirrored by `drawCaption` in benchmarks.js."""
+    if table is None:
+        return ""
+    head = "".join(f"<th scope=\"col\">{escape(text)}</th>" for text in ["Build", "Measured", *table["headings"], "Notes"])
+    body = ""
+    for row in table["rows"]:
+        cells = "".join(f'<td data-label="{escape(name, quote=True)}">{escape(cell)}</td>' for name, cell in zip(table["headings"], row["cells"]))
+        body += (f'<tr><th scope="row">{anchor(row["label"], row["url"])} <span class="build-meta">build {escape(row["build"])}</span></th>'
+                 f'<td data-label="Measured">{escape(row["measured"])}</td>{cells}<td data-label="Notes">{escape(row["notes"])}</td></tr>')
+    note = f" {escape(table['note'])}" if table["note"] else ""
+    return (f'<table class="bench-table"><caption>{escape(table["box"])}.{note}</caption>'
+            f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>')
 
 
 def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
@@ -204,7 +249,7 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
 <div class="bench-media"><figure class="device {FRAMES[name]}">{glass_svg() if "glass" in FRAMES[name] else ""}{screen(chart, FRAMES[name])}</figure>
 <p class="bench-legend">{swatches}</p>
 <p class="bench-direction">{escape(charts.direction_note(spec, built))}</p>
-<p class="bench-caption">{"".join(anchor(text, url) for text, url in charts.caption_parts(built, None, spec["query"].get("details"), spec["query"].get("windows")))}</p></div>
+<div class="bench-caption">{caption_html(charts.caption_table(built, None, spec["query"].get("details"), spec["query"].get("windows")))}</div></div>
 <fieldset class="bench-rows"{"" if built["entries"] else " hidden"}>{rows_html}</fieldset>
 </div>
 </section>"""

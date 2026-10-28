@@ -42,6 +42,15 @@ function niceCeiling(value) {
   return 10 * magnitude;
 }
 const number = (value) => value.toFixed(1).replace(/\.0$/, "");
+// Orders a port's builds: the numbers in the version (0.6.1, v1.0.2, build-314), then the date, then the build id; a version
+// with no numbers sorts first. Positive when `a` is newer. Mirrors version_key in charts.py.
+function compareBuilds(a, b) {
+  const numbers = (e) => (e.version.match(/\d+/g) || []).map(Number);
+  const [x, y] = [numbers(a), numbers(b)];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i] - y[i];
+  if (x.length !== y.length) return x.length - y.length;
+  return a.date < b.date ? -1 : a.date > b.date ? 1 : a.build < b.build ? -1 : a.build > b.build ? 1 : 0;
+}
 const entryKey = (entry) => [entry.port, entry.version, entry.build].join("@");
 
 // Extra per-build figures a chart spec lists under `query.details`; mirrors DETAILS in charts.py.
@@ -117,24 +126,24 @@ function model(rows, query, suite) {
     || (a.build < b.build ? -1 : a.build > b.build ? 1 : 0));
   const newest = new Map();
   for (const entry of entries) {
-    if (entry.value !== null && (!newest.has(entry.port) || entry.date > newest.get(entry.port).date)) newest.set(entry.port, entry);
+    if (entry.value !== null && (!newest.has(entry.port) || compareBuilds(entry, newest.get(entry.port)) > 0)) newest.set(entry.port, entry);
   }
   for (const entry of entries) entry.default = newest.get(entry.port) === entry;
   const reference = platformRows.find((row) => String(row.reference_box).toLowerCase() === "true");
   return { overall: suite === "overall", entries, box: reference ? reference.host : "" };
 }
 
-// The builds list: one group per port in the model's order. `primary` is the port's newest measured build (ticked by default),
-// or its newest build when none has data; `others` are the rest, offered as other versions. Mirrors build_groups in charts.py.
+// The builds list: one group per port in the model's order. `primary` is the port's newest version, with or without data for
+// the chart; `others` are the rest, newest first, offered as other versions. Mirrors build_groups in charts.py.
 function buildGroups(built) {
   const groups = new Map();
   for (const entry of built.entries) {
-    if (!groups.has(entry.port)) groups.set(entry.port, { port: entry.port, port_name: entry.port_name, items: [] });
-    groups.get(entry.port).items.push(entry);
+    if (!groups.has(entry.port)) groups.set(entry.port, []);
+    groups.get(entry.port).push(entry);
   }
-  return [...groups.values()].map(({ items, ...group }) => {
-    const primary = items.find((e) => e.default) || items[0];
-    return { ...group, primary, others: items.filter((e) => e !== primary) };
+  return [...groups.values()].map((items) => {
+    const ordered = [...items].sort((a, b) => compareBuilds(b, a));
+    return { port: items[0].port, port_name: items[0].port_name, primary: ordered[0], others: ordered.slice(1) };
   });
 }
 
@@ -258,6 +267,30 @@ function captionText(built, selected, columns, windows) {
   return captionParts(built, selected, columns, windows).map(([text]) => text).join("");
 }
 
+// The per-build figures under a chart as a table; mirrors caption_table in charts.py.
+const DETAIL_HEADINGS = { p95_ms: "95th-percentile frame time (ms)", on_time_pct: "On time", gpu_p50_ms: "Median GPU time (ms)",
+  gpu_p90_ms: "90th-percentile GPU time (ms)" };
+
+function captionTable(built, selected, columns, windows) {
+  const shown = drawn(built, selected);
+  if (!shown.length) return null;
+  columns = columns || [];
+  if (!windows || !windows.length) windows = [...new Set(shown.flatMap((e) => e.value.windows || []))].sort();
+  const rows = shown.map((e) => {
+    const cells = columns.map((column) => {
+      const value = (e.value.details || {})[column];
+      if (value === null || value === undefined) return "\u2013";
+      let text = value.toFixed(DETAILS[column].places);
+      if (text.includes(".")) text = text.replace(/\.?0+$/, "");
+      return text + (DETAILS[column].unit === "%" ? "%" : "");
+    });
+    const note = columns.length && cells.every((c) => c === "\u2013") ? detailText(e, columns) : "";
+    const gaps = missingWindows(e, windows).replace(/^; /, "");
+    return { label: e.label, url: e.url || "", build: e.build || "unknown", measured: e.date, cells, notes: [note, gaps].filter(Boolean).join("; ") };
+  });
+  return { box: built.box, note: overallNote(built, selected), headings: columns.map((c) => DETAIL_HEADINGS[c]), rows };
+}
+
 // Plain-language text for reason codes (docs/benchmarks/reasons.toml); unknown codes pass through.
 function plainReason(reason, reasons) {
   if (Object.hasOwn(reasons.exact, reason)) return reasons.exact[reason];
@@ -270,7 +303,7 @@ function plainReason(reason, reasons) {
   return reason;
 }
 
-if (typeof module !== "undefined") module.exports = { captionParts, headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, entryKey, buildGroups, SUITES };
+if (typeof module !== "undefined") module.exports = { captionParts, headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, captionTable, entryKey, buildGroups, SUITES };
 
 // ---- Page ----
 function readHash() {
@@ -422,22 +455,38 @@ function buildItem(entry, spec, state) {
   const input = el("input", { type: "checkbox", value: key });
   const name = el("span", { class: "build-name" }, entry.url ? el("a", { href: entry.url, rel: "noopener" }, entry.label) : entry.label);
   const meta = el("span", { class: "build-meta" }, `build ${entry.build || "unknown"}, ${entry.date}`);
+  const label = el("label", { class: "build-label" }, input, " ", name, " ", meta);
   if (entry.value === null) {
     input.disabled = true;
     const tag = entry.kind === "not_supported" ? "not supported" : "not measured here";
     const reason = plainReason(entry.reason, state.reasons);
-    return el("label", { class: "build off", title: reason }, input, " ", name, " ", meta, " ",
-      el("span", { class: "tag", "aria-hidden": "true" }, tag), el("span", { class: "sr-only" }, `${tag}: ${reason}`));
+    return el("div", { class: "build off", title: reason }, label,
+      el("details", { class: "why" }, el("summary", { class: "tag" }, tag), el("p", {}, reason)));
   }
   input.checked = state.selected[spec.slug].has(key);
   input.addEventListener("change", () => {
     if (input.checked) state.selected[spec.slug].add(key); else state.selected[spec.slug].delete(key);
     state.refresh(spec, false);
   });
-  return el("label", { class: "build" }, input, " ", name, " ", meta);
+  return el("div", { class: "build" }, label);
 }
 
 // Built when the suite changes, not on every tick, so keyboard focus and the open disclosures stay where they are.
+// Mirrors caption_html in site_page.py.
+function drawCaption(node, table) {
+  node.replaceChildren();
+  if (!table) return;
+  const cell = (tag, attributes, ...children) => el(tag, attributes, ...children);
+  const head = el("tr", {}, ...["Build", "Measured", ...table.headings, "Notes"].map((text) => cell("th", { scope: "col" }, text)));
+  const body = table.rows.map((row) => el("tr", {},
+    cell("th", { scope: "row" }, row.url ? el("a", { href: row.url, rel: "noopener" }, row.label) : row.label, " ",
+      el("span", { class: "build-meta" }, `build ${row.build}`)),
+    cell("td", { "data-label": "Measured" }, row.measured), ...row.cells.map((text, i) => cell("td", { "data-label": table.headings[i] }, text)),
+    cell("td", { "data-label": "Notes" }, row.notes)));
+  node.append(el("table", { class: "bench-table" }, el("caption", {}, `${table.box}.` + (table.note ? " " + table.note : "")),
+    el("thead", {}, head), el("tbody", {}, ...body)));
+}
+
 function drawList(list, spec, built, state) {
   list.hidden = !built.entries.length;
   list.replaceChildren(el("legend", {}, "Builds"));
@@ -486,8 +535,7 @@ async function start() {
     if (rebuildList) drawList(section.querySelector(".bench-rows"), spec, built, state);
     drawLegend(section.querySelector(".bench-legend"), spec,
       !built.entries.length ? 0 : drawn(built, state.selected[spec.slug]).some((e) => e.value.low !== null) ? 2 : 1);
-    section.querySelector(".bench-caption").replaceChildren(...captionParts(built, state.selected[spec.slug], spec.query.details, spec.query.windows)
-      .map(([text, url]) => (url ? el("a", { href: url, rel: "noopener" }, text) : text)));
+    drawCaption(section.querySelector(".bench-caption"), captionTable(built, state.selected[spec.slug], spec.query.details, spec.query.windows));
     writeHash(state, specs);
   }
   state.refresh = refresh;

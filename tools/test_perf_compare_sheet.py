@@ -168,15 +168,41 @@ def test_model_ticks_the_newest_build_of_each_port_and_lists_the_rest_with_reaso
     assert by_key["visr@0.5.1@7"]["value"] == {"avg": pytest.approx(547.7226, abs=1e-3), "low": pytest.approx(200.0), "details": {}, "windows": ["a10", "b30"], "rows": by_key["visr@0.5.1@7"]["value"]["rows"]}
 
 
-def test_builds_group_by_port_with_the_newest_measured_build_first_and_the_rest_folded_away():
+def entry(port, version, build, date, value, **extra):
+    return {"port": port, "port_name": port, "version": version, "build": build, "date": date, "label": f"{port} {version}",
+            "url": "", "value": value, "reason": "", "kind": "" if value else "not_measured", "default": False, **extra}
+
+
+def test_builds_group_by_port_with_the_newest_version_first_and_the_rest_folded_away():
     built = charts.model(snapshot_rows(), QUERY, "campaign")
     groups = {g["port"]: g for g in charts.build_groups(built)}
     visr = groups["visr"]
     assert charts.entry_key(visr["primary"]) == "visr@0.5.1@7" and visr["primary"]["default"]
     assert [charts.entry_key(e) for e in visr["others"]] == ["visr@main@5"]
-    assert not any(e["default"] for g in groups.values() for e in g["others"])
     assert sum(1 + len(g["others"]) for g in groups.values()) == len(built["entries"])
     assert [g["port"] for g in charts.build_groups(built)] == list(dict.fromkeys(e["port"] for e in built["entries"]))
+
+
+def test_the_newest_version_leads_even_when_an_older_one_was_measured_later():
+    value = {"avg": 1.0, "low": None, "details": {}, "rows": []}
+    older_later = entry("visr", "0.6.0", "1", "2026-10-28", value)
+    newer = entry("visr", "0.6.1", "2", "2026-10-27", value)
+    web = [entry("web", "build-280", "280", "2026-10-27", None), entry("web", "build-314", "314", "2026-10-26", None)]
+    built = {"overall": False, "box": "", "entries": [older_later, newer, *web]}
+    groups = {g["port"]: g for g in charts.build_groups(built)}
+    assert groups["visr"]["primary"] is newer and groups["visr"]["others"] == [older_later]
+    assert groups["web"]["primary"]["build"] == "314"
+    assert charts.version_key(newer) > charts.version_key(older_later) > charts.version_key(entry("visr", "main", "", "2099-01-01", None))
+
+
+def test_a_newest_version_without_data_stays_primary_and_the_ticked_build_sits_in_the_fold():
+    value = {"avg": 1.0, "low": None, "details": {}, "rows": []}
+    measured = entry("visr", "0.6.2", "1", "2026-10-27", value, default=True)
+    missing = entry("visr", "0.6.3", "2", "2026-10-28", None, reason="no campaign measurements yet")
+    group = charts.build_groups({"overall": False, "box": "", "entries": [measured, missing]})[0]
+    assert group["primary"] is missing and group["others"] == [measured]
+    html = site_page.builds_list({"entries": [measured, missing], "overall": False, "box": ""}, charts.load_reasons())
+    assert "<details class=\"older\" data-port=\"visr\" open>" in html
 
 
 def test_a_port_with_no_measured_build_is_listed_once_by_its_newest_build():
@@ -185,7 +211,7 @@ def test_a_port_with_no_measured_build_is_listed_once_by_its_newest_build():
     assert web["primary"]["value"] is None and not web["primary"]["default"]
 
 
-def test_builds_list_shows_one_row_per_port_dims_unmeasured_builds_and_keeps_reasons_in_the_tooltip():
+def test_builds_list_shows_one_row_per_port_dims_unmeasured_builds_and_opens_the_reason_in_place():
     reasons = charts.load_reasons()
     built = charts.model(snapshot_rows(), QUERY, "campaign")
     html = site_page.builds_list(built, reasons)
@@ -194,9 +220,25 @@ def test_builds_list_shows_one_row_per_port_dims_unmeasured_builds_and_keeps_rea
     assert 'type="checkbox" value="visr@main@5">' in html and "<details" in html
     off = next(e for e in built["entries"] if e["value"] is None)
     item = site_page.build_item(off, reasons)
+    reason = charts.plain_reason(off["reason"], reasons)
     assert 'class="build off"' in item and "disabled" in item and "not measured here" in item
-    assert f'title="{charts.plain_reason(off["reason"], reasons)}"' in item
-    assert "Not measured:" not in item
+    assert f'title="{reason}"' in item and f"<p>{reason}</p>" in item and '<summary class="tag">' in item
+    assert "Not measured:" not in item and "<button" not in item
+
+
+def test_caption_table_has_one_row_per_drawn_build_with_the_detail_columns_and_notes():
+    value = {"avg": 10.0, "low": None, "details": {"gpu_p50_ms": 4.15, "gpu_p90_ms": 5.0}, "windows": ["a10"], "rows": []}
+    bare = {"avg": 10.0, "low": None, "details": {"gpu_p50_ms": None, "gpu_p90_ms": None}, "windows": ["a10", "b30"], "rows": []}
+    one = entry("visr", "0.6.1", "7", "2026-10-27", value, default=True)
+    two = entry("gl", "1.0", "", "2026-10-28", bare, default=True, gpu_note="GPU time per frame not available (OpenGL)")
+    built = {"overall": False, "box": "M6 Mac mini", "entries": [one, two]}
+    table = charts.caption_table(built, None, ["gpu_p50_ms", "gpu_p90_ms"], ["a10", "b30"])
+    assert table["headings"] == ["Median GPU time (ms)", "90th-percentile GPU time (ms)"]
+    assert table["rows"][0]["cells"] == ["4.15", "5"] and table["rows"][0]["notes"] == "b30 not measured yet"
+    assert table["rows"][1]["cells"] == ["\u2013", "\u2013"] and table["rows"][1]["notes"] == "GPU time per frame not available (OpenGL)"
+    html = site_page.caption_html(table)
+    assert html.count("<tr>") == 3 and "<caption>M6 Mac mini.</caption>" in html and 'data-label="Median GPU time (ms)"' in html
+    assert charts.caption_table({**built, "entries": [{**one, "value": None}]}, None, []) is None
 
 
 def test_suites_without_data_show_not_measured_rows():
@@ -389,7 +431,7 @@ const out = {};
 for (const spec of JSON.parse(fs.readFileSync(0, 'utf8'))) for (const suite of m.SUITES.concat(['overall'])) {
   const built = m.model(rows, spec.query, suite);
   out[spec.slug + '/' + suite] = [m.chartSource(spec, built, suite), m.captionText(built, null, spec.query.details, spec.query.windows), built.entries.map((e) => [m.entryKey(e), e.default, e.kind, e.reason]),
-    m.buildGroups(built).map((g) => [g.port, m.entryKey(g.primary), g.others.map(m.entryKey)])];
+    m.buildGroups(built).map((g) => [g.port, m.entryKey(g.primary), g.others.map(m.entryKey)]), m.captionTable(built, null, spec.query.details, spec.query.windows)];
   const firstKey = built.entries.length ? new Set([m.entryKey(built.entries[0])]) : new Set();
   out[spec.slug + '/' + suite + '/first'] = [m.chartSource(spec, built, suite, firstKey), m.captionText(built, firstKey, spec.query.details, spec.query.windows)];
 }
@@ -403,7 +445,8 @@ console.log(JSON.stringify(out));
             built = charts.model(rows, item["query"], suite)
             expected = [charts.source(item, built, suite), charts.caption(built, None, item["query"].get("details"), "", item["query"].get("windows")),
                         [[charts.entry_key(e), e["default"], e["kind"], e["reason"]] for e in built["entries"]],
-                        [[g["port"], charts.entry_key(g["primary"]), [charts.entry_key(e) for e in g["others"]]] for g in charts.build_groups(built)]]
+                        [[g["port"], charts.entry_key(g["primary"]), [charts.entry_key(e) for e in g["others"]]] for g in charts.build_groups(built)],
+                        charts.caption_table(built, None, item["query"].get("details"), item["query"].get("windows"))]
             assert browser[f"{site_page.slug(item)}/{suite}"] == expected
             first = {charts.entry_key(built["entries"][0])} if built["entries"] else set()
             assert browser[f"{site_page.slug(item)}/{suite}/first"] == [

@@ -81,6 +81,12 @@ def _number(value: float) -> str:
     return f"{value:.1f}".removesuffix(".0")
 
 
+def version_key(entry: dict) -> tuple:
+    """Orders a port's builds, newest last: the numbers in the version (0.6.1, v1.0.2, build-314), then the measurement
+    date, then the build id. A version with no numbers (main) sorts first. Mirrored by `versionKey` in benchmarks.js."""
+    return (tuple(int(n) for n in re.findall(r"\d+", entry["version"])), entry["date"], entry["build"])
+
+
 def entry_key(entry: dict) -> str:
     return "@".join((entry["port"], entry["version"], entry["build"]))
 
@@ -173,7 +179,7 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
                                 tuple(-ord(c) for c in e["date"]), e["version"], e["build"]))
     newest: dict[str, dict] = {}
     for entry in entries:
-        if entry["value"] is not None and (entry["port"] not in newest or entry["date"] > newest[entry["port"]]["date"]):
+        if entry["value"] is not None and (entry["port"] not in newest or version_key(entry) > version_key(newest[entry["port"]])):
             newest[entry["port"]] = entry
     for entry in entries:
         entry["default"] = newest.get(entry["port"]) is entry
@@ -181,17 +187,17 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
 
 
 def build_groups(built: dict) -> list[dict]:
-    """The builds list, one group per port in the model's order. A group's `primary` is the build ticked by default
-    (the port's newest measured one), or the newest build when none has data; `others` are the port's remaining
-    builds, newest first, offered as older versions. Mirrored by `buildGroups` in benchmarks.js."""
-    groups: dict[str, dict] = {}
+    """The builds list, one group per port in the model's order. A group's `primary` is the port's newest version,
+    whether or not it has data for the chart; `others` are its remaining builds, newest first, offered as older
+    versions (the build ticked by default sits there when the newest version has no data). Mirrored by `buildGroups`
+    in benchmarks.js."""
+    groups: dict[str, list[dict]] = {}
     for entry in built["entries"]:
-        groups.setdefault(entry["port"], {"port": entry["port"], "port_name": entry["port_name"], "entries": []})["entries"].append(entry)
+        groups.setdefault(entry["port"], []).append(entry)
     result = []
-    for group in groups.values():
-        items = group.pop("entries")
-        primary = next((e for e in items if e["default"]), items[0])
-        result.append({**group, "primary": primary, "others": [e for e in items if e is not primary]})
+    for items in groups.values():
+        ordered = sorted(items, key=version_key, reverse=True)
+        result.append({"port": items[0]["port"], "port_name": items[0]["port_name"], "primary": ordered[0], "others": ordered[1:]})
     return result
 
 
@@ -366,6 +372,45 @@ def caption_parts(built: dict, selected: set[str] | None = None, columns: list[s
                       + (f"; {_detail_text(e, columns)}" if columns else "") + _missing_windows(e, windows) + ")"
                       + ("; " if index < len(drawn) - 1 else "."), ""))
     return parts
+
+
+# Column headings for the per-build figures in the table under a chart.
+DETAIL_HEADINGS = {"p95_ms": "95th-percentile frame time (ms)", "on_time_pct": "On time", "gpu_p50_ms": "Median GPU time (ms)",
+                   "gpu_p90_ms": "90th-percentile GPU time (ms)"}
+
+
+def _detail_cells(entry: dict, columns: list[str]) -> tuple[list[str], str]:
+    """One cell per detail column ("-" where the build has none) and the note for a build with none at all."""
+    cells = []
+    for column in columns:
+        value = (entry["value"].get("details") or {}).get(column)
+        if value is None:
+            cells.append("\u2013")
+            continue
+        unit, _, _, places = DETAILS[column]
+        text = f"{value:.{places}f}"
+        text = text.rstrip("0").rstrip(".") if "." in text else text
+        cells.append(text + ("%" if unit == "%" else ""))
+    note = _detail_text(entry, columns) if columns and all(cell == "\u2013" for cell in cells) else ""
+    return cells, note
+
+
+def caption_table(built: dict, selected: set[str] | None = None, columns: list[str] | None = None,
+                  windows: list[str] | None = None) -> dict | None:
+    """The per-build figures under a chart as a table: a header line (box and Overall note), column headings and one row
+    per drawn build. Mirrored by `captionTable` in benchmarks.js."""
+    drawn = _drawn(built, selected)
+    if not drawn:
+        return None
+    columns = columns or []
+    windows = windows or sorted({name for e in drawn for name in (e["value"].get("windows") or [])})
+    rows = []
+    for e in drawn:
+        cells, note = _detail_cells(e, columns)
+        gaps = _missing_windows(e, windows).removeprefix("; ")
+        rows.append({"label": e["label"], "url": e.get("url", ""), "build": e["build"] or "unknown", "measured": e["date"],
+                     "cells": cells, "notes": "; ".join(part for part in (note, gaps) if part)})
+    return {"box": built["box"], "note": overall_note(built, selected), "headings": [DETAIL_HEADINGS[c] for c in columns], "rows": rows}
 
 
 def caption(built: dict, selected: set[str] | None = None, columns: list[str] | None = None, links: str = "",
