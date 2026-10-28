@@ -4263,6 +4263,9 @@ this much of them */
 #define PACING_HEADROOM 0.8
 
 @interface PacingClock : NSObject
+/* where the link came from and the rate the screen offers, for the line that says what rate it really runs at */
+@property(nonatomic,copy) NSString *source;
+@property(nonatomic) double asked;
 - (void)refresh:(CADisplayLink *)link;
 @end
 
@@ -4288,6 +4291,10 @@ static float pacing_link_rate(float screen_rate)
 }
 #endif
 @implementation PacingClock
+{
+	unsigned _measured;
+	CFTimeInterval _first;
+}
 - (void)refresh:(CADisplayLink *)link
 {
 #if HALO_NATIVE_MAC
@@ -4309,6 +4316,17 @@ static float pacing_link_rate(float screen_rate)
 	os_unfair_lock_unlock(&pacing_lock);
 	/* (the pacer's clock: host_frame_pacer.h) */
 	frame_pacer_refresh(link.timestamp, link.targetTimestamp - link.timestamp);
+	/* the rate the link really runs at, measured over its first 240 refreshes after each start: an external
+	display's frames should come at its own rate (a 60 Hz monitor's 60, not a 120 Hz panel's) */
+	if (_measured < 241)
+	{
+		if (!_measured++)
+			_first = link.timestamp;
+		else if (_measured == 241 && link.timestamp > _first)
+			platform_log("Metal: frame pacing follows %s at %.2f Hz measured (the screen offers %.0f Hz, the link asks %.0f)",
+				_source ? _source.UTF8String : "the display", 240.0 / (link.timestamp - _first), _asked,
+				(double)link.preferredFrameRateRange.preferred);
+	}
 }
 @end
 
@@ -4389,14 +4407,32 @@ static void pacing_start(uint32_t flags)
     CADisplayLink *native_link=host_macos_display_link([PacingClock new],@selector(refresh:));
     float native_rate=(float)host_macos_refresh_rate();
 #endif
+#if !HALO_NATIVE_MAC && !TARGET_OS_VISION
+    /* (read here, on the thread that moves the output, not on the link's) */
+    UIScreen *screen=(__bridge UIScreen *)host_external_screen();
+    PacingClock *clock=[PacingClock new];
+    CADisplayLink *scene_link=nil;
+#if !TARGET_OS_MACCATALYST && ((TARGET_OS_IOS && __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000) || \
+    (TARGET_OS_TV && __TV_OS_VERSION_MAX_ALLOWED >= 270000))
+    /* The frames go to the scene's display, so they are paced by that display's own refreshes: an external
+       monitor's 60 Hz, not the phone panel's. UIScreen's link (deprecated in iOS 27) is not tied to the display
+       the scene is on; frames paced against another display's clock drift through the monitor's refreshes,
+       smooth while the two line up and stuttering while they don't. */
+    if (@available(iOS 27.0, tvOS 27.0, *)) {
+        UIWindowScene *scene=(__bridge UIWindowScene *)host_external_scene();
+        if(scene)scene_link=[scene displayLinkWithTarget:clock selector:@selector(refresh:)];
+    }
+#endif
+    clock.source=scene_link?@"the window scene's display":@"the screen";
+    clock.asked=(double)screen.maximumFramesPerSecond;
+#endif
 	NSThread *thread = [[NSThread alloc] initWithBlock:^{
 #if HALO_NATIVE_MAC
         CADisplayLink *link=native_link;
 #elif TARGET_OS_VISION
         CADisplayLink *link=[CADisplayLink displayLinkWithTarget:[PacingClock new] selector:@selector(refresh:)];
 #else
-        UIScreen *screen=(__bridge UIScreen *)host_external_screen();
-        CADisplayLink *link=[screen displayLinkWithTarget:[PacingClock new] selector:@selector(refresh:)];
+        CADisplayLink *link=scene_link?:[screen displayLinkWithTarget:clock selector:@selector(refresh:)];
 #endif
         pacing_link=link;
 

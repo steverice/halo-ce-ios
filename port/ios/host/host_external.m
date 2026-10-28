@@ -389,6 +389,18 @@ void host_external_snapshot(struct host_external_snapshot *out) {
 int host_external_active(void) { return snapshot.external; }
 void *host_external_phone_layer(void) { return companion_on?phone_layer:NULL; }
 void *host_external_screen(void) { return (__bridge void *)(output_screen?:UIScreen.mainScreen); }
+/* The window scene the renderer presents in: the external display's while the game is on it, else the game
+   window's (which Stage Manager may have moved to another screen). Its display link runs on that display's clock;
+   UIScreen's own display link is deprecated in iOS 27 and is not tied to the scene's display. nil before the game
+   window exists. */
+void *host_external_scene(void) {
+    UIWindowScene *scene=nil;
+#if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
+    if(external_window && candidate_screen && output_screen==candidate_screen)scene=external_window.windowScene;
+#endif
+    if(!scene && phone_window && output_screen==phone_window.windowScene.screen)scene=phone_window.windowScene;
+    return (__bridge void *)scene;
+}
 int host_external_size(int *width,int *height) {
 #if TARGET_OS_MACCATALYST
     const char *test=getenv("HALO_TEST_OUTPUT_SIZES");
@@ -734,6 +746,7 @@ int host_external_active(void) { return 0; }
 int host_external_size(int *width,int *height) { (void)width;(void)height;return 0; }
 void *host_external_phone_layer(void) { return NULL; }
 void *host_external_screen(void) { return NULL; }
+void *host_external_scene(void) { return NULL; }
 double host_external_companion_dim(void) { return 1.0; }
 void host_external_snapshot(struct host_external_snapshot *out) {
     memset(out,0,sizeof(*out));

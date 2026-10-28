@@ -19,6 +19,8 @@ int host_external_active(void);
 int host_external_size(int *width, int *height);
 void *host_external_phone_layer(void);
 void *host_external_screen(void);
+/* the UIWindowScene the renderer presents in (its display's clock drives frame pacing); NULL if unknown */
+void *host_external_scene(void);
 double host_external_companion_dim(void);
 void host_external_snapshot(struct host_external_snapshot *out);
 int host_external_cycle(int direction);
