@@ -135,7 +135,8 @@ function chartSource(spec, built, suite, selected, palette) {
   const averages = shown.map((e) => e.value.avg);
   // A build without a 1% low draws no bar in the second series (a zero-length bar) instead of dropping the series.
   const known = shown.map((e) => e.value.low).filter((low) => low !== null);
-  const lows = shown.map((e) => e.value.low ?? 0);
+  // The 1% low never exceeds the average, so a low that rounds above it (a capped run) is drawn at the average.
+  const lows = shown.map((e) => (e.value.low === null ? 0 : Math.min(e.value.low, e.value.avg)));
   const withLows = known.length > 0;
   const yMax = chart.y_max ?? niceCeiling(Math.max(...averages, ...known) * 1.08);
   const head = chart.horizontal ? "xychart-beta horizontal" : "xychart-beta";

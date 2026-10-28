@@ -190,7 +190,9 @@ def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None
     averages = [e["value"]["avg"] for e in drawn]
     # A build without a 1% low draws no bar in the second series (a zero-length bar) instead of dropping the series.
     known = [e["value"]["low"] for e in drawn if e["value"]["low"] is not None]
-    lows = [e["value"]["low"] if e["value"]["low"] is not None else 0 for e in drawn]
+    # The 1% low never exceeds the average, so a low that rounds above it (a capped run) is drawn at the average and
+    # does not cover the average bar.
+    lows = [min(e["value"]["low"], e["value"]["avg"]) if e["value"]["low"] is not None else 0 for e in drawn]
     with_lows = bool(known)
     y_max = chart.get("y_max", _nice_ceiling(max(averages + known) * 1.08))
     head = "xychart-beta horizontal" if chart.get("horizontal") else "xychart-beta"

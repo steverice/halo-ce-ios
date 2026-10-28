@@ -550,3 +550,15 @@ def test_capped_charts_keep_the_one_percent_low_and_list_on_time_share():
     entry = built["entries"][0]
     assert entry["value"]["low"] is not None
     assert "93.3% of frames on time" in charts.caption(built, {charts.entry_key(entry)}, ["on_time_pct"])
+
+
+def test_a_one_percent_low_above_the_average_is_drawn_at_the_average():
+    rows = snapshot_rows()
+    for row in rows:
+        row.update(fps_1pct_low="900")
+    built = charts.model(rows, QUERY, "campaign")
+    entry = built["entries"][0]
+    text = charts.source(spec(), built, "campaign", {charts.entry_key(entry)})
+    average = text.split("    bar [")[1].split("]")[0]
+    low = text.split("    bar [")[2].split("]")[0]
+    assert low == average

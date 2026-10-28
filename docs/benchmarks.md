@@ -56,14 +56,14 @@ xychart-beta horizontal
     x-axis "Port and version" ["VISR 0.6.0", "Beeman apple-v0.3.0", "ChupathingyCE iOS v0.2.0 (pre-release)"]
     y-axis "Frames per second" 0 --> 150
     bar [119.5, 119.4, 119.1]
-    bar [119.9, 119.9, 119.9]
+    bar [119.5, 119.4, 119.1]
 ```
 
 🟦 Average fps 🟨 1% low fps
 
 M1 iPad Pro. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; no on-time share reported); [Beeman apple-v0.3.0](https://github.com/bmanturner/halo-ce-universal/releases/tag/apple-v0.3.0) (build unknown, measured 2026-10-27; no on-time share reported; b30 not measured yet); [ChupathingyCE iOS v0.2.0 (pre-release)](https://github.com/JizzyRivers/chupathingyce-ios/releases/tag/v0.2.0) (build 0.8.0h-dev d7fafc8, measured 2026-10-27; no on-time share reported; b30 not measured yet).
 
-Not measured: [HaloPad v0.3.12](https://github.com/chrissotraidis/projectreach/releases/tag/v0.3.12) (Not measured yet.); [SnailBBQ v0.2.118-beta](https://github.com/SnailBBQ/Halo-CE-IOS/releases/tag/v0.2.118-beta) (Not measured yet.).
+Not measured: [HaloPad v0.3.12](https://github.com/chrissotraidis/projectreach/releases/tag/v0.3.12) (Not run on this device yet.); [SnailBBQ v0.2.118-beta](https://github.com/SnailBBQ/Halo-CE-IOS/releases/tag/v0.2.118-beta) (Not run on this device yet.).
 
 ### Apple TV
 
@@ -84,7 +84,7 @@ xychart-beta horizontal
     x-axis "Port and version" ["VISR 0.6.0"]
     y-axis "Frames per second" 0 --> 40
     bar [29.8]
-    bar [30]
+    bar [29.8]
 ```
 
 🟦 Average fps 🟨 1% low fps
