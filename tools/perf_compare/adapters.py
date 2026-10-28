@@ -192,7 +192,10 @@ def timing_method(target, config):
     """`glft` for OpenGL ports, `metalperftrace` when the config asks for it, else the Metal HUD."""
     if target['id'] in GLFT_PORTS:
         return 'glft'
-    return config.get('native_method', 'hud')
+    base = config.get('native_method', 'hud')
+    # A repeat of a window whose `metalperftrace` capture held no per-frame timeline (g-force, bot windows): time the
+    # Metal ports at `CAMetalLayer nextDrawable` with the same shim, which gave the same average rate to the digit.
+    return 'glft-metal' if base == 'metalperftrace' and config.get('metal_swap_shim') else base
 DRAWABLES = {'1280x960': (640, 480), '2560x1920': (1280, 960)}
 
 
@@ -322,7 +325,10 @@ def _native(target, scenario, out, config):
     glft_output = out / 'glft.bin'
     if method == 'glft':
         env.update(GLFT_ENVIRONMENT[config.get('frame_mode', 'capped')])
+    if method in ('glft', 'glft-metal'):
         env.update(glft.shim_environment(glft.compile_shim(out / 'libglft.dylib'), glft_output))
+        if method == 'glft-metal':
+            env['GLFT_METAL'] = '1'
     # Execute only the published bundle's declared host. Never read its code.
     stderr = (out / 'app.log').open('w')
     process = subprocess.Popen([str(binary), *target.get('args', [])], cwd=(out if target['id'] in ENV_CONSOLE_PORTS else app.parent), env=env,
@@ -395,12 +401,12 @@ def _native(target, scenario, out, config):
             frontmost(process.pid)
             if config.get('capture_windows'):
                 capture_window(process.pid, out / 'qualification-end.png')
-            if method == 'glft':
+            if method in ('glft', 'glft-metal'):
                 swaps = glft.read_swaps(glft_output)
                 (out / 'glft-intervals.json').write_text(json.dumps({
                     'intervals_ms': glft.intervals_ms(swaps, state['trace_start'], trace_end), 'swaps_total': len(swaps),
                     'viewport': glft.viewport(glft_output)}))
-                if glft.viewport(glft_output) != target.get('drawable', drawable).replace('x', '×'):
+                if method == 'glft' and glft.viewport(glft_output) != target.get('drawable', drawable).replace('x', '×'):
                     raise RuntimeError('resolution-mismatch')
             if method == 'metalperftrace':
                 collect = json.loads(run(['metalperftrace', 'collect', '--start', '@' + str(state['trace_start']),
@@ -433,7 +439,7 @@ def _native(target, scenario, out, config):
             (out / 'window.json').write_text(json.dumps(outcome, indent=2))
             (out / 'console.txt').write_text(console.buf)
             extra = {'window_kind': window['kind'], 'fingerprint': outcome, 'reference_shot': window.get('reference_shot', '')}
-        return {'thermal': state['before']['state'] + ' → ' + thermal()['state'], 'drawable': target.get('drawable', drawable).replace('x', '×'),
+        return {'timing': method, 'thermal': state['before']['state'] + ' → ' + thermal()['state'], 'drawable': target.get('drawable', drawable).replace('x', '×'),
                 **extra,
                 **qualification(target, scenario, config.get('display_hz', 60),
                                 config.get('frame_mode', 'capped'), config.get('native_delay_seconds', 0),
@@ -452,7 +458,7 @@ def _native(target, scenario, out, config):
         if log_stream:
             log_stream.close()
         stderr.close()
-        if method == 'glft':
+        if method in ('glft', 'glft-metal'):
             glft_output.unlink(missing_ok=True)  # 64 MB memory-mapped swap log; the intervals are already in glft-intervals.json
         # Halo OG's per-run maps copy is regenerable and several GB: remove it as soon as the run is over.
         if target['id'] == 'halo-og' and (data / 'maps').is_dir() and not (data / 'maps').is_symlink():

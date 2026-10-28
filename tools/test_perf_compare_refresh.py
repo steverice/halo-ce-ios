@@ -497,8 +497,11 @@ def test_a_trace_without_frames_repeats_the_round_instead_of_ending_the_target(t
     monkeypatch.setattr(m, 'fetch', lambda *args: {'version': 'v1', 'sha256': 'a' * 64})
     monkeypatch.setattr(m.adapters, 'host_state', lambda **kwargs: {})
 
+    shims = []
+
     def native(target, scenario, folder, config):
         calls.append(scenario)
+        shims.append(bool(config.get('metal_swap_shim')))
         (folder / 'timeline.json').write_text(json.dumps({'pid': 1, 'traces': [[]]}))
         return {'scene_verified': True, 'resolution': '1280×960', 'cap': 'unlimited'}
     monkeypatch.setattr(m.adapters, 'native', native)
@@ -507,6 +510,7 @@ def test_a_trace_without_frames_repeats_the_round_instead_of_ending_the_target(t
     m.refresh(config, tmp_path / 'summary.json', tmp_path / 'page.md')
     # three attempts at round 1 (the original and two repeats), then that window is unavailable and the later rounds skip it
     assert calls == ['c10'] * 3
+    assert shims == [False, True, True]  # the repeats time the swap with the shim, not the empty trace
     [record] = json.loads((tmp_path / 'summary.json').read_text())['records']
     assert [x['reason'] for x in record['rejected']] == ['no-intervals', 'no-intervals']
     assert record['window_status'] == {'c10': {'status': 'unavailable', 'reason': 'no frames in the trace'}}
@@ -520,3 +524,11 @@ def test_corece_and_halo_og_size_their_window_by_scale_and_halo_og_has_uncapped_
         assert 'render_height = 0' in big
     assert 'shadow_resolution' not in m.adapters.native_display('halo-og', 'uncapped', 'matched-stock', '2560x1920')
     assert 'shadow_resolution = 128' in m.adapters.native_display('corece', 'uncapped', 'matched-stock', '2560x1920')
+
+
+def test_timing_method_falls_back_to_the_metal_swap_shim_only_on_repeats():
+    import adapters
+    base = {'native_method': 'metalperftrace'}
+    assert adapters.timing_method({'id': 'visr'}, base) == 'metalperftrace'
+    assert adapters.timing_method({'id': 'visr'}, {**base, 'metal_swap_shim': True}) == 'glft-metal'
+    assert adapters.timing_method({'id': 'chupathingy'}, {**base, 'metal_swap_shim': True}) == 'glft'
