@@ -658,7 +658,8 @@ def test_a_builds_label_links_to_its_release_in_the_caption_and_the_builds_list(
     rows = charts.load_snapshot(ROOT / "docs/benchmarks/results.csv")
     spec = next(item for item in charts.load_specs(ROOT / "docs/benchmarks/charts") if item["query"]["platform"] == "Apple TV")
     built = charts.model(rows, spec["query"], "campaign")
-    assert built["entries"][0]["url"] == "https://github.com/steverice/visr/releases/tag/visr-v0.6.0"
+    entry = next(e for e in built["entries"] if e["version"] == "0.6.0")
+    assert entry["url"] == "https://github.com/steverice/visr/releases/tag/visr-v0.6.0"
     assert "[VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build" in charts.caption(built, None, None, "markdown")
     assert charts.caption(built) == "".join(text for text, _ in charts.caption_parts(built))
     html = site_page.section(spec, rows, "campaign", charts.load_reasons())
