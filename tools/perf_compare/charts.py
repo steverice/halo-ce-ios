@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import re
 from pathlib import Path
 import statistics
 import sys
@@ -53,6 +54,9 @@ def plain_reason(reason: str, reasons: dict) -> str:
         return reasons["exact"][reason]
     if reason.startswith("no ") and reason.endswith(" measurements yet"):
         return reasons["patterns"]["no_suite_data"].format(suite=reason[3:-len(" measurements yet")])
+    match = re.fullmatch(r"not measured in (.+?): (.+)", reason)
+    if match:
+        return reasons["patterns"]["partial_suite"].format(suite=match[1], windows=match[2])
     if reason.startswith("missing "):
         return reasons["patterns"]["missing_suites"].format(suites=reason[len("missing "):])
     return reason
@@ -125,6 +129,11 @@ def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | Non
         if skipped:
             return None, skipped[0]["notes"], "not_measured"
         return None, query.get("no_data_reason", "no matching measurement"), "not_measured"
+    required = query.get("suite_windows", {}).get(suite, [])
+    missing = [name for name in required if name not in usable]
+    if missing:
+        # A suite bar covers the same windows for every port: a build with only some of them is listed, not drawn.
+        return None, f"not measured in {SUITE_NAMES[suite]}: {', '.join(missing)}", "not_measured"
     rows = list(usable.values())
     return {"avg": statistics.geometric_mean(float(r["fps_avg"]) for r in rows),
             "low": (statistics.geometric_mean(float(r["fps_1pct_low"]) for r in rows)
@@ -170,9 +179,17 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
     return {"overall": suite == "overall", "entries": entries, "box": next((r["host"] for r in platform_rows if r["reference_box"].lower() == "true"), "")}
 
 
-def covered_suites(pool: list[dict]) -> list[str]:
-    """The suites every build in the pool has measured: what Overall covers on a chart."""
-    return [name for name in SUITES if pool and all(e["suites"].get(name) for e in pool)]
+def overall_suites(pool: list[dict]) -> list[str]:
+    """The suites Overall covers on a chart: every suite at least one drawn build has complete. A build missing one
+    of them is left out of Overall (see `overall_split`), so one incomplete port does not shrink the set for the rest."""
+    return [name for name in SUITES if any(e["suites"].get(name) for e in pool)]
+
+
+def overall_split(pool: list[dict]) -> tuple[list[str], list[dict], list[dict]]:
+    """(suites, builds drawn, builds left out) for Overall."""
+    suites = overall_suites(pool)
+    kept = [e for e in pool if suites and all(e["suites"].get(name) for name in suites)]
+    return suites, kept, [e for e in pool if e not in kept]
 
 
 def _overall_value(entry: dict, covered: list[str]) -> dict:
@@ -187,27 +204,38 @@ def _overall_value(entry: dict, covered: list[str]) -> dict:
             "rows": [r for p in parts for r in p["rows"]]}
 
 
-def _drawn(built: dict, selected: set[str] | None) -> list[dict]:
-    """The builds a chart draws. For Overall, the geometric mean runs over the suites that every drawn build
-    has measured, so the bars stay comparable; no common suite means nothing is drawn."""
-    pool = [e for e in built["entries"] if e["value"] is not None
+def _pool(built: dict, selected: set[str] | None) -> list[dict]:
+    return [e for e in built["entries"] if e["value"] is not None
             and (entry_key(e) in selected if selected is not None else e["default"])]
+
+
+def _drawn(built: dict, selected: set[str] | None) -> list[dict]:
+    """The builds a chart draws. For Overall, the geometric mean runs over the suites above, for the builds that
+    have all of them."""
+    pool = _pool(built, selected)
     if not built.get("overall"):
         return pool
-    covered = covered_suites(pool)
-    return [{**e, "value": _overall_value(e, covered)} for e in pool] if covered else []
+    suites, kept, _ = overall_split(pool)
+    return [{**e, "value": _overall_value(e, suites)} for e in kept]
+
+
+def _names(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
 def overall_note(built: dict, selected: set[str] | None = None) -> str:
-    """The caption sentence naming the suites Overall covers on this chart, or "" for any other suite."""
+    """The caption sentences naming the suites Overall covers and the ticked builds it leaves out, or "" for any
+    other suite."""
     if not built.get("overall"):
         return ""
-    pool = [e for e in built["entries"] if e["value"] is not None
-            and (entry_key(e) in selected if selected is not None else e["default"])]
-    covered = [SUITE_NAMES[name] for name in covered_suites(pool)]
-    if not covered:
+    suites, kept, left = overall_split(_pool(built, selected))
+    if not kept:
         return ""
-    return "Overall covers " + (covered[0] if len(covered) == 1 else ", ".join(covered[:-1]) + " and " + covered[-1]) + "."
+    note = "Overall covers " + _names([SUITE_NAMES[name] for name in suites]) + "."
+    for e in left:
+        gaps = [SUITE_NAMES[name] for name in suites if not e["suites"].get(name)]
+        note += f" {e['label']} is not in Overall: {_names(gaps)} not measured completely."
+    return note
 
 
 def chart_title(spec: dict, built: dict, suite: str) -> str:
@@ -334,7 +362,7 @@ def empty_text(spec: dict, built: dict) -> str:
     if not built["entries"]:
         return spec["empty"].strip()
     if built.get("overall") and any(e["value"] is not None for e in built["entries"]):
-        return "No suite has been measured on every build in this chart."
+        return "No build in this chart has every suite Overall covers."
     return "No build has data for this suite yet."
 
 

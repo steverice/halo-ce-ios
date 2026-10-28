@@ -64,7 +64,7 @@
 <fieldset class="bench-bar"><legend>Suite</legend><label><input type="radio" name="suite" value="campaign" checked> Campaign</label><label><input type="radio" name="suite" value="combat"> Combat</label><label><input type="radio" name="suite" value="cutscenes"> Cutscenes</label><label><input type="radio" name="suite" value="multiplayer"> Multiplayer</label><label><input type="radio" name="suite" value="co-op"> Co-op</label><label><input type="radio" name="suite" value="overall"> Overall</label></fieldset>
 <section class="bench" data-platform="mac" aria-labelledby="h-mac">
 <h2 id="h-mac">Mac</h2>
-<p>Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over the suite&#x27;s windows. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame. Halo OG is limited by CPU command submission, not by a frame cap.</p>
+<p>Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over all of the suite&#x27;s windows (Campaign: c10 and b30; Combat: a50-hangar, b40-exta and b30-bot; Cutscenes: x70-bridge and cutscene-rescue); a build missing any of them is listed under the chart instead. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame. Halo OG is limited by CPU command submission, not by a frame cap.</p>
 <div class="bench-grid">
 <div class="bench-media"><figure class="device device-mac"><div class="bench-chart"><img src="benchmarks/static-mac.svg" alt="Mac: average and 1% low fps per build, Campaign suite"></div></figure>
 <p class="bench-legend"><span class="swatch avg" aria-hidden="true"></span> Average fps</p>
@@ -163,7 +163,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
  {
   "slug": "mac",
   "heading": "Mac",
-  "paragraph": "Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame. Halo OG is limited by CPU command submission, not by a frame cap.",
+  "paragraph": "Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over all of the suite's windows (Campaign: c10 and b30; Combat: a50-hangar, b40-exta and b30-bot; Cutscenes: x70-bridge and cutscene-rescue); a build missing any of them is listed under the chart instead. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame. Halo OG is limited by CPU command submission, not by a frame cap.",
   "empty": "No Mac results yet.",
   "box": "M6 Mac mini",
   "series_labels": [
@@ -203,6 +203,21 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
     "halo-og"
    ],
    "no_data_reason": "no uncapped 2560×1920 matched-stock measurement",
+   "suite_windows": {
+    "campaign": [
+     "c10",
+     "b30"
+    ],
+    "combat": [
+     "a50-hangar",
+     "b40-exta",
+     "b30-bot"
+    ],
+    "cutscenes": [
+     "x70-bridge",
+     "cutscene-rescue"
+    ]
+   },
    "filter": {
     "frame_mode": "uncapped",
     "drawable": "2560×1920",

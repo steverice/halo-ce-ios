@@ -184,50 +184,69 @@ def overall_entry(rows, port, version, selected=None):
     return built, entry["value"]
 
 
-def test_overall_covers_only_the_suites_every_drawn_build_has_measured():
-    # VISR also has Multiplayer and Combat; OpenCE-macOS has Campaign only: the chart compares on Campaign.
-    extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"},
-             {**box_record(fps=(300.0, 300.0), p99=20.0), "suite": "combat"}]
-    rows = overall_rows(*[r for r in extra])
-    built, visr = overall_entry(rows, "visr", "0.5.1")
-    assert charts.covered_suites([e for e in built["entries"] if e["default"] and e["value"]]) == ["campaign"]
-    assert visr["avg"] == pytest.approx((500 * 600) ** 0.5)
-    assert charts.overall_note(built) == "Overall covers Campaign."
-    assert "M6 Mac mini. Overall covers Campaign. " in charts.caption(built)
-
-
-def test_overall_grows_when_every_drawn_build_gains_a_suite():
-    extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"},
-             {**box_record(port="opence-macos", version="v1.0.2", build="2", fps=(50.0, 50.0), p99=40.0), "suite": "multiplayer"}]
-    built, visr = overall_entry(overall_rows(*extra), "visr", "0.5.1")
-    assert charts.overall_note(built) == "Overall covers Campaign and Multiplayer."
-    assert visr["avg"] == pytest.approx(((500 * 600) ** 0.5 * 100) ** 0.5)
-    assert visr["low"] == pytest.approx((200 * 100) ** 0.5)
-    _, other = overall_entry(overall_rows(*extra), "opence-macos", "v1.0.2")
-    assert other["avg"] == pytest.approx(((500 * 600) ** 0.5 * 50) ** 0.5)
-
-
-def test_overall_coverage_follows_the_ticked_builds():
+def test_overall_covers_every_suite_a_drawn_build_has_complete_and_leaves_out_builds_missing_one():
+    # VISR also has Multiplayer; OpenCE-macOS has Campaign only. Overall covers Campaign and Multiplayer and leaves OpenCE out.
     extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"}]
     rows = overall_rows(*extra)
     built = charts.model(rows, QUERY, "overall")
+    suites, kept, left = charts.overall_split(charts._pool(built, None))
+    assert suites == ["campaign", "multiplayer"]
+    assert [e["port"] for e in kept] == ["visr"] and [e["port"] for e in left] == ["opence-macos"]
+    visr = charts._drawn(built, None)[0]["value"]
+    assert visr["avg"] == pytest.approx(((500 * 600) ** 0.5 * 100) ** 0.5)
+    note = charts.overall_note(built)
+    assert note.startswith("Overall covers Campaign and Multiplayer.")
+    assert "OpenCE-macOS v1.0.2 is not in Overall: Multiplayer not measured completely." in note
+
+
+def test_overall_suite_set_follows_the_ticked_builds():
+    extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"}]
+    built = charts.model(overall_rows(*extra), QUERY, "overall")
     assert charts.overall_note(built, {"visr@0.5.1@7"}) == "Overall covers Campaign and Multiplayer."
-    assert charts.overall_note(built, {"visr@0.5.1@7", "opence-macos@v1.0.2@2"}) == "Overall covers Campaign."
+    both = {"visr@0.5.1@7", "opence-macos@v1.0.2@2"}
+    assert "OpenCE-macOS v1.0.2 is not in Overall" in charts.overall_note(built, both)
+    only_opence = charts.overall_note(built, {"opence-macos@v1.0.2@2"})
+    assert only_opence == "Overall covers Campaign."
     text = charts.source(spec(), built, "overall", {"visr@0.5.1@7"})
     assert 'title "Overall: uncapped fps, M6 Mac mini"' in text and '["VISR 0.5.1"]' in text
     assert charts.source(spec(), built, "overall", set()) is None
 
 
-def test_overall_with_no_common_suite_draws_nothing_and_says_why():
-    rows = snapshot_rows(
-        {**box_record(port="corece", version="0.3.0", build="9", fps=(100.0, 100.0)), "suite": "co-op"})
+def test_overall_draws_nothing_when_no_build_has_every_suite_in_the_set():
+    rows = snapshot_rows({**box_record(port="corece", version="0.3.0", build="9", fps=(100.0, 100.0)), "suite": "co-op"})
     built = charts.model(rows, {**QUERY, "port_order": ["visr", "corece"]}, "overall")
     keys = {"visr@0.5.1@7", "corece@0.3.0@9"}
     assert charts.source(spec(), built, "overall", keys) is None
     assert charts.caption(built, keys) == ""
-    # The default view ticks each port's newest build: VISR and OpenCE-macOS share Campaign, CoreCE only has Co-op.
-    assert charts.source(spec(), built, "overall") is None
-    assert charts.empty_text(spec(), built) == "No suite has been measured on every build in this chart."
+    assert charts.empty_text(spec(), built) == "No build in this chart has every suite Overall covers."
+
+
+def window_chart_rows(extra_windows=()):
+    """VISR with every Combat window; a second port with only the listed ones."""
+    full = box_record(version="0.6.1")
+    full["scenarios"] = ["a50-hangar", "b40-exta", "b30-bot"]
+    full["runs"] = [run(n, w, 300.0, 5.0, "Mac mini (M6, 24 GB)") for n in (1, 2, 3) for w in ("a50-hangar", "b40-exta", "b30-bot")]
+    part = box_record(port="opence-macos", version="v1.0.2", build="2")
+    part["scenarios"] = list(extra_windows)
+    part["runs"] = [run(n, w, 200.0, 5.0, "Mac mini (M6, 24 GB)") for n in (1, 2, 3) for w in extra_windows]
+    for record in (full, part):
+        record["suite"] = "combat"
+    return csv_rows(sheet_export.rows(summary(full, part)))
+
+
+def test_a_build_is_drawn_in_a_suite_only_with_every_window_of_that_suite():
+    query = {**QUERY, "suite_windows": {"combat": ["a50-hangar", "b40-exta", "b30-bot"]}}
+    built = charts.model(window_chart_rows(("b40-exta",)), query, "combat")
+    by = {e["port"]: e for e in built["entries"]}
+    assert by["visr"]["value"] is not None
+    assert by["opence-macos"]["value"] is None
+    assert by["opence-macos"]["reason"] == "not measured in Combat: a50-hangar, b30-bot"
+    assert charts.plain_reason(by["opence-macos"]["reason"], charts.load_reasons()).startswith("Not drawn: the Combat suite")
+    full = charts.model(window_chart_rows(("a50-hangar", "b40-exta", "b30-bot")), query, "combat")
+    assert all(e["value"] is not None for e in full["entries"] if e["port"] in ("visr", "opence-macos"))
+    # Without the spec key, partial builds are charted from their windows, as the device charts do.
+    loose = charts.model(window_chart_rows(("b40-exta",)), QUERY, "combat")
+    assert next(e for e in loose["entries"] if e["port"] == "opence-macos")["value"] is not None
 
 
 def test_overall_lists_builds_with_no_data_and_defaults_to_the_newest_build_of_each_port():
@@ -671,7 +690,7 @@ console.log(JSON.stringify(input.selections.map((keys) => {
     expected = [[charts.source(spec(), built, "overall", None if keys is None else set(keys)),
                  charts.caption(built, None if keys is None else set(keys), [])] for keys in selections]
     assert json.loads(done.stdout) == expected
-    assert "Overall covers Campaign and Combat." in expected[0][1]
+    assert "Overall covers Campaign, Combat and Multiplayer. OpenCE-macOS v1.0.2 is not in Overall: Multiplayer not measured completely." in expected[0][1]
     assert "Overall covers Campaign, Combat and Multiplayer." in expected[1][1]
 
 

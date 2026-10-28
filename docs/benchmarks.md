@@ -12,7 +12,7 @@ Campaign suite, newest build of each port.
 
 ### Mac
 
-Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame. Halo OG is limited by CPU command submission, not by a frame cap.
+Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over all of the suite's windows (Campaign: c10 and b30; Combat: a50-hangar, b40-exta and b30-bot; Cutscenes: x70-bridge and cutscene-rescue); a build missing any of them is listed under the chart instead. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame. Halo OG is limited by CPU command submission, not by a frame cap.
 
 ```mermaid
 ---

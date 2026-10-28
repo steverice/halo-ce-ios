@@ -69,6 +69,9 @@ function suiteValue(group, query, suite) {
     if (skipped.length) return [null, skipped[0].notes, "not_measured"];
     return [null, query.no_data_reason || "no matching measurement", "not_measured"];
   }
+  // A suite bar covers the same windows for every port: a build with only some of them is listed, not drawn.
+  const missing = ((query.suite_windows || {})[suite] || []).filter((name) => !usable.has(name));
+  if (missing.length) return [null, `not measured in ${SUITE_NAMES[suite]}: ${missing.join(", ")}`, "not_measured"];
   const rows = [...usable.values()];
   const details = {};
   for (const column of query.details || []) {
@@ -124,9 +127,12 @@ function pool(built, selected) {
   return built.entries.filter((e) => e.value !== null && (selected ? selected.has(entryKey(e)) : e.default));
 }
 
-// The suites every build in the pool has measured: what Overall covers on a chart.
-function coveredSuites(shown) {
-  return shown.length ? SUITES.filter((name) => shown.every((e) => e.suites[name])) : [];
+// The suites Overall covers: every suite at least one drawn build has complete. A build missing one of them is left
+// out of Overall, so one incomplete port does not shrink the set for the rest.
+function overallSplit(shown) {
+  const suites = SUITES.filter((name) => shown.some((e) => e.suites[name]));
+  const kept = shown.filter((e) => suites.length && suites.every((name) => e.suites[name]));
+  return { suites, kept, left: shown.filter((e) => !kept.includes(e)) };
 }
 
 function overallValue(entry, covered) {
@@ -140,20 +146,27 @@ function overallValue(entry, covered) {
   return { avg: geometricMean(parts.map((p) => p.avg)), details, low: parts.every((p) => p.low !== null) ? geometricMean(parts.map((p) => p.low)) : null, rows: parts.flatMap((p) => p.rows) };
 }
 
-// The builds a chart draws. For Overall the geometric mean runs over the suites every drawn build has measured,
-// so the bars stay comparable; no common suite means nothing is drawn.
+// The builds a chart draws. For Overall the geometric mean runs over the suites above, for the builds that have all of them.
 function drawn(built, selected) {
   const shown = pool(built, selected);
   if (!built.overall) return shown;
-  const covered = coveredSuites(shown);
-  return covered.length ? shown.map((e) => ({ ...e, value: overallValue(e, covered) })) : [];
+  const { suites, kept } = overallSplit(shown);
+  return kept.map((e) => ({ ...e, value: overallValue(e, suites) }));
+}
+
+function joinNames(items) {
+  return items.length === 1 ? items[0] : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
 }
 
 function overallNote(built, selected) {
   if (!built.overall) return "";
-  const names = coveredSuites(pool(built, selected)).map((name) => SUITE_NAMES[name]);
-  if (!names.length) return "";
-  return "Overall covers " + (names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " and " + names[names.length - 1]) + ".";
+  const { suites, kept, left } = overallSplit(pool(built, selected));
+  if (!kept.length) return "";
+  let note = "Overall covers " + joinNames(suites.map((name) => SUITE_NAMES[name])) + ".";
+  for (const e of left) {
+    note += ` ${e.label} is not in Overall: ${joinNames(suites.filter((name) => !e.suites[name]).map((name) => SUITE_NAMES[name]))} not measured completely.`;
+  }
+  return note;
 }
 
 function headerText(chart, palette) {
@@ -234,6 +247,8 @@ function plainReason(reason, reasons) {
   if (Object.hasOwn(reasons.exact, reason)) return reasons.exact[reason];
   let match = /^no (.+) measurements yet$/.exec(reason);
   if (match) return reasons.patterns.no_suite_data.replace("{suite}", match[1]);
+  match = /^not measured in (.+?): (.+)$/.exec(reason);
+  if (match) return reasons.patterns.partial_suite.replace("{suite}", match[1]).replace("{windows}", match[2]);
   match = /^missing (.+)$/.exec(reason);
   if (match) return reasons.patterns.missing_suites.replace("{suites}", match[1]);
   return reason;
@@ -358,7 +373,7 @@ async function drawChart(container, spec, built, suite, selected) {
     const anyData = built.entries.some((e) => e.value !== null);
     const nothingCommon = built.overall && anyData && pool(built, selected).length;
     container.append(el("p", { class: "bench-empty" }, !built.entries.length ? spec.empty
-      : nothingCommon ? "No suite has been measured on every build in this chart."
+      : nothingCommon ? "No build in this chart has every suite Overall covers."
       : anyData ? "Nothing is ticked." : "No build has data for this suite yet."));
     return;
   }
