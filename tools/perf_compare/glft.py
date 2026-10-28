@@ -29,12 +29,18 @@ def shim_environment(library: Path, output: Path) -> dict[str, str]:
     return {'DYLD_INSERT_LIBRARIES': str(library), 'GLFT_OUT': str(output)}
 
 
+def uptime_ns() -> int:
+    """The mach uptime clock the shim stamps with (macOS); the monotonic clock elsewhere, so the parsing is testable."""
+    clock = getattr(time, 'CLOCK_UPTIME_RAW', None)
+    return time.clock_gettime_ns(clock) if clock is not None else time.monotonic_ns()
+
+
 def read_swaps(path: Path) -> list[float]:
     """Wall-clock times (seconds) of every recorded frame swap."""
     raw = Path(path).read_bytes()
     count, numer, denom = struct.unpack_from('<QII', raw, 8)
     rows = struct.unpack_from(f'<{2 * count}Q', raw, HEADER)
-    offset = time.time() - time.clock_gettime(time.CLOCK_UPTIME_RAW)  # same host and boot as the app
+    offset = time.time() - uptime_ns() / 1e9  # same host and boot as the app
     return [rows[2 * i] * numer / denom / 1e9 + offset for i in range(count)]
 
 

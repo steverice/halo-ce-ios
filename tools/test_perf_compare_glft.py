@@ -22,7 +22,7 @@ def test_header_size_matches_the_shim_layout():
 
 
 def test_swaps_become_wall_clock_times_and_intervals_inside_the_window(tmp_path):
-    base = time.clock_gettime_ns(time.CLOCK_UPTIME_RAW)
+    base = glft.uptime_ns()
     step = 5_000_000  # 5 ms between swaps
     write_log(tmp_path / 'glft.bin', [base + i * step for i in range(200)])
     swaps = glft.read_swaps(tmp_path / 'glft.bin')
@@ -34,7 +34,7 @@ def test_swaps_become_wall_clock_times_and_intervals_inside_the_window(tmp_path)
 
 
 def test_mach_ticks_use_the_recorded_timebase(tmp_path):
-    base = time.clock_gettime_ns(time.CLOCK_UPTIME_RAW)
+    base = glft.uptime_ns()
     # Apple silicon's 125/3 timebase: 24,000 ticks are exactly one millisecond.
     write_log(tmp_path / 'glft.bin', [base * 3 // 125 + i * 24_000 for i in range(5)], numer=125, denom=3)
     intervals = glft.intervals_ms(glft.read_swaps(tmp_path / 'glft.bin'), 0, float('inf'))
