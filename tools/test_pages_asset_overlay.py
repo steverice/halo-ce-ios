@@ -384,3 +384,24 @@ def test_a_lower_profile_revision_cannot_replace_a_published_shard(monkeypatch):
     with pytest.raises(ValueError, match="revision"):
         overlay.advance(PROFILE_2, b"new", b"rollback")
     overlay.advance(PROFILE_2, b"new", b"next")
+
+
+def test_a_retired_recording_feed_leaves_the_site_but_other_live_feeds_stay(tmp_path, monkeypatch):
+    (tmp_path / "docs/site").mkdir(parents=True)
+    retired = sorted(overlay.RETIRED_FEEDS)[0]
+    other = "docs/site/packs/tester/recordings-" + "9" * 64 + ".json"
+    live = {
+        RECORDING: envelope("benchmark-catalog-1:" + "a" * 64, 1, "r"),
+        retired: envelope("benchmark-catalog-1:" + "b" * 64, 1, "old"),
+        other: envelope("benchmark-catalog-1:" + "9" * 64, 1, "kept"),
+    }
+    monkeypatch.setattr(overlay, "ROOT", tmp_path)
+    monkeypatch.setattr(overlay, "trusted_source", lambda: "a" * 40)
+    monkeypatch.setattr(overlay, "verify_asset", lambda path, data: json.loads(data))
+    monkeypatch.setattr(overlay, "source_assets", lambda: {RECORDING: live[RECORDING]})
+    monkeypatch.setattr(overlay, "live_assets", lambda: dict(live))
+    result = overlay.stage_site(destination=tmp_path / "stage")
+    assert not (result / retired.removeprefix("docs/site/")).exists()
+    assert (result / other.removeprefix("docs/site/")).read_bytes() == live[other]
+    receipt = json.loads((result / "packs/tester/publication.json").read_bytes())
+    assert retired not in receipt["assets"] and other in receipt["assets"]

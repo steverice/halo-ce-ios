@@ -44,6 +44,18 @@ LEGACY_PROFILE_INDEX = PREFIX + "profiles-2.json"
 # Each device-profile generation's shards live in their own directory: profiles/ holds the frozen
 # device-profiles-1 shards that 0.4.2 to 0.5.1 read, device-profiles-N/ the later generations'.
 PROFILE_DIRECTORIES = {"profiles": "device-profiles-1", "device-profiles-2": "device-profiles-2"}
+# Live feeds that source deletion alone would not remove: stage_site keeps every live asset the source lacks,
+# so a retired recording feed is named here. They served only releases before 0.6.0.
+RETIRED_FEEDS = frozenset(
+    PREFIX + "recordings-" + guest + ".json"
+    for guest in (
+        "28e06eaaa33443bbcce7ad8b4415d73bf3d21ab2d00a5846d8b85ec3b183f995",
+        "d57c1206e07347c174974dac9e6bdfd2df6bea9194a991198e12048b4f239b92",
+        "a949cfcc94abf93df5bd091bd9d27a6933dbc688b81f52c3ea863fa720ff99eb",
+        "6c831c00ef902ff90589f77cd834291dfde17dcec189cd3bdff22fd168f3334e",
+        "4d6924ec86afba868b1fd994bcc323d441b18991ef5367cebca18a6b5cb97d2d",
+    )
+)
 MAX_ASSETS = 256
 MAX_RECEIPT = 65536
 MAX_TOTAL = 512 * 1024 * 1024
@@ -448,6 +460,8 @@ def stage_site(
     live = live_assets()
     selected = dict(source)
     for path, raw in live.items():
+        if path in RETIRED_FEEDS and path not in source:
+            continue
         if path in source:
             a, b = verify_asset(path, source[path]), verify_asset(path, raw)
             if a["compatibility"] == b["compatibility"]:

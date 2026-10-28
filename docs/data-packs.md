@@ -101,6 +101,8 @@ python3 tools/data_pack.py --kind recordings --channel tester \
   --signing-key /private/path/signing-seed --output recordings.json
 ```
 
+The tester site serves one feed per release, `recordings-GUEST_SHA256.json`, for 0.6.0 and later, plus the plain `recordings.json` that development builds read by default. Feeds for earlier releases are retired (`RETIRED_FEEDS` in `tools/pages_asset_overlay.py` removes a retired feed from the live site, which otherwise keeps every asset the repository lacks). A 0.5.x build whose feed is gone gets a 404, shows "Benchmark recordings are unavailable" and rechecks with backoff only while its menu is showing.
+
 A running benchmark keeps a copied, hashed recording snapshot. Resume uses those same bytes. A changed catalog, profile, guest hash, or baseline setting starts a fresh session. Format validation does not establish replay fidelity; verify actual movement or combat during the measurement window.
 
 ## Latest release record

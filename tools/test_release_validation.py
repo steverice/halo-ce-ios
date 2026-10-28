@@ -646,18 +646,6 @@ def test_check_command_emits_verified_catalog_context(
     ]
 
 
-def test_pages_overlay_keeps_the_published_legacy_feed_unchanged() -> None:
-    from tools.pages_recording_overlay import checked_feed
-
-    guest = "4d6924ec86afba868b1fd994bcc323d441b18991ef5367cebca18a6b5cb97d2d"
-    feed = (
-        Path(__file__).resolve().parents[1]
-        / "docs/site/packs/tester"
-        / f"recordings-{guest}.json"
-    )
-    assert checked_feed(feed.read_bytes(), guest) == 3
-
-
 def test_rejected_source_never_runs_secret_job_cleanup(tmp_path: Path) -> None:
     """Model GitHub's failure/default/always conditions with a real rejected Git source."""
     workflow = (validation.release.ROOT / ".github/workflows/release.yml").read_text()

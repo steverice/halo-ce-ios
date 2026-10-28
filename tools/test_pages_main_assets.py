@@ -22,18 +22,6 @@ RECORDING_SECOND = (
     "docs/site/packs/tester/recordings-"
     "6c831c00ef902ff90589f77cd834291dfde17dcec189cd3bdff22fd168f3334e.json"
 )
-RECORDING_050 = (
-    "docs/site/packs/tester/recordings-"
-    "28e06eaaa33443bbcce7ad8b4415d73bf3d21ab2d00a5846d8b85ec3b183f995.json"
-)
-RECORDING_051 = (
-    "docs/site/packs/tester/recordings-"
-    "d57c1206e07347c174974dac9e6bdfd2df6bea9194a991198e12048b4f239b92.json"
-)
-RECORDING_052 = (
-    "docs/site/packs/tester/recordings-"
-    "a949cfcc94abf93df5bd091bd9d27a6933dbc688b81f52c3ea863fa720ff99eb.json"
-)
 RECORDING_060 = (
     "docs/site/packs/tester/recordings-"
     "28b14010a886a159afff1bec13ec7f516b5235f270934906f15ff59ff10b0fd1.json"
@@ -217,25 +205,10 @@ def test_current_release_assets_are_checked_in_and_exact():
     recordings = [path for path in assets if "recordings" in Path(path).name]
     assert len(profiles) == 20
     assert len([path for path in assets if "/device-profiles-2/" in path]) == 55
-    assert len(recordings) == 10
+    assert len(recordings) == 5
     assert set(assets) == set(overlay.parse_receipt((root / RECEIPT).read_bytes()))
     assert hashlib.sha256(assets[RECORDING]).hexdigest() == (
         "8977e0e49588399d1c0f867d98f955b8a815b0c05e7463df2d1e92ae3ba64d89"
-    )
-    assert hashlib.sha256(assets[RECORDING_OLD]).hexdigest() == (
-        "69655d46646b69f259e66803204e840306a32740fffe904ce9517550c4650956"
-    )
-    assert hashlib.sha256(assets[RECORDING_SECOND]).hexdigest() == (
-        "262e9073873bed77aab3705d4490c5272eb20aa3c2ad0d66c4665be2b1471df8"
-    )
-    assert hashlib.sha256(assets[RECORDING_050]).hexdigest() == (
-        "da937b8f9169e74d14aeac05d187bc34c50fd8e111be4ea8cb9713e2ca22824e"
-    )
-    assert hashlib.sha256(assets[RECORDING_051]).hexdigest() == (
-        "b1dd79313a5e60043e8f9e91b10152950c44d0897fab5f842155c069e17d5aa9"
-    )
-    assert hashlib.sha256(assets[RECORDING_052]).hexdigest() == (
-        "90bd98c96033913ef68771111369efcc44d2aff0087579b72ff4fab02ce12352"
     )
     assert hashlib.sha256(assets[RECORDING_060]).hexdigest() == (
         "4ef803888532401d66d132d2963ac9ff8ef9cef017fd0769f576452b38b7f5b4"
