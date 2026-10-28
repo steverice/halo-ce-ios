@@ -123,7 +123,8 @@ class Hooks:
 
 
 def _read_all(console, expressions, clock, numeric=False):
-    return {expression: console.query(expression, clock, numeric=numeric) for expression in expressions}
+    timeout = 10.0 if numeric else 3.0
+    return {expression: console.query(expression, clock, timeout=timeout, numeric=numeric) for expression in expressions}
 
 
 def _living(window):
@@ -229,8 +230,11 @@ def run_bot(window, console, hooks, clock, prints=True):
 def run_session(window, console, hooks, clock):
     """A hosted game (a match or split-screen co-op) that is already running: warm up after player readiness, then
     sample. The player count and game time are read at both ends of the window for the content checks."""
-    clock.sleep(window['warmup_s'])
-    console.sync(clock)
+    # The readiness probes the adapter sent while waiting for a player are still queued, and the game answers
+    # about one console line per tick: drain them during the warm-up so the counts read at the window's ends are current.
+    opened = clock.now()
+    console.sync(clock, timeout=150.0)
+    clock.sleep(max(0.0, window['warmup_s'] - (clock.now() - opened)))
     hooks.prepare()
     start_reads = _read_all(console, window['fingerprints'], clock, numeric=True)
     hooks.begin()
