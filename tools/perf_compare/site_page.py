@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import sys
+from string import Template
 
 from markdown_it import MarkdownIt
 
@@ -20,6 +21,18 @@ ROOT = Path(__file__).resolve().parents[2]
 SITE = ROOT / "docs/site"
 MERMAID = "https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.min.js"
 MERMAID_SRI = "sha384-o+g/BxPwhi0C3RK7oQBxQuNimeafQ3GE/ST4iT2BxVI4Wzt60SH4pq9iXVYujjaS"  # sha384 of the pinned file; recompute when the version changes
+
+TITLE = "VISR performance benchmarks"
+DESCRIPTION = "Frame-rate comparisons of VISR with other Halo: Combat Evolved ports on Apple devices."
+
+
+def head_tags(metadata: dict[str, str]) -> dict[str, str]:
+    """The icon and social-card tags shared with the other site pages (tools/site_head_*.html, read by build_site.py)."""
+    icons = (ROOT / "tools/site_head_icons.html").read_text(encoding="utf-8").rstrip("\n")
+    social = Template((ROOT / "tools/site_head_social.html").read_text(encoding="utf-8")).substitute(
+        {key: escape(value, quote=True) for key, value in metadata.items()}).rstrip("\n")
+    return {"head_icons": icons, "head_social": social}
+
 
 STYLE = """
 .page { max-width: 1160px; }
@@ -149,16 +162,18 @@ def render_site_page(summary: dict, rows: list[dict], specs: list[dict], legal_h
                       f"[results spreadsheet]({SHEET_URL}) holds every number. The methodology is at the bottom of this page.")
     method = md.render("\n".join(methodology(summary, rows)))
     body = "\n".join(section(spec, rows, charts.DEFAULT_SUITE, reasons) for spec in specs)
+    head = head_tags({"description": DESCRIPTION, "og_title": TITLE, "path": "benchmarks.html"})
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VISR performance benchmarks</title>
-<meta name="description" content="Frame-rate comparisons of VISR with other Halo: Combat Evolved ports on Apple devices.">
+<title>{TITLE}</title>
+<meta name="description" content="{DESCRIPTION}">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" type="image/png" href="icon.png">
+{head["head_icons"]}
 <link rel="stylesheet" href="style.css">
+{head["head_social"]}
 <style>{STYLE}</style>
 </head>
 <body>

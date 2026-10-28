@@ -182,6 +182,15 @@ def image_size(path: Path) -> tuple[int, int]:
     raise ValueError(f"Unsupported site image: {path.name}")
 
 
+def head_tags(metadata: dict[str, str]) -> dict[str, str]:
+    """The icon and social-card tags every site page shares (tools/site_head_icons.html and site_head_social.html),
+    filled from the page's description, og_title and path. The benchmarks page generator reads the same files."""
+    icons = (ROOT / "tools/site_head_icons.html").read_text(encoding="utf-8").rstrip("\n")
+    social = Template((ROOT / "tools/site_head_social.html").read_text(encoding="utf-8")).substitute(
+        {key: escape(value, quote=True) for key, value in metadata.items()}).rstrip("\n")
+    return {"head_icons": icons, "head_social": social}
+
+
 def render_site(source: str, template: str | None = None, *, asset_root: Path | None = None) -> str:
     facts = load_facts()
     metadata, source = front_matter(source)
@@ -313,6 +322,7 @@ def render_site(source: str, template: str | None = None, *, asset_root: Path | 
     if template is None:
         template = (ROOT / "tools/site_template.html").read_text(encoding="utf-8")
     return Template(template).substitute(
+        **head_tags(metadata),
         **{key: escape(value, quote=True) for key, value in metadata.items()},
         content="\n".join(output).replace(f"<p>{EVERY_DEVICE_MARKER}</p>", every_device_columns(facts)),
         legal=md.render(facts["shared"]["legal"]).rstrip(),
