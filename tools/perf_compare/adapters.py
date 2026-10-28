@@ -286,7 +286,8 @@ def _native(target, scenario, out, config):
         port_socket.bind(('127.0.0.1', 0))
         port = port_socket.getsockname()[1]
     drawable = config.get('drawable', '1280x960')
-    display = native_display(target['id'], config.get('frame_mode', 'capped'), config.get('quality_preset', 'defaults'), drawable)
+    # Chupathingy has no config.toml: its frame limit comes from GLFT_ENVIRONMENT and its quality settings stay at its defaults.
+    display = '' if target['id'] in GLFT_PORTS else native_display(target['id'], config.get('frame_mode', 'capped'), config.get('quality_preset', 'defaults'), drawable)
     text = ('[display]\n' + display + '[audio]\nenabled = false\n[network]\nonline = false\n'
             '[update]\nauto = false\n[community_maps]\nauto_download = false\n'
             '[timer_audio]\nauto_download = false\n[discord]\napplication_id = \"\"\n'
