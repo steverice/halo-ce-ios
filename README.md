@@ -219,5 +219,9 @@ VISR does not include or distribute the game's maps, sounds, textures, videos or
 
 It builds on the Halo: CE decompilation, [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and the other projects in its [credits](https://github.com/steverice/visr#credits). The code is licensed under [Apache-2.0](https://github.com/steverice/visr/blob/main/LICENSE). It includes code that originated in CC0 1.0 projects, credited in the [notices](https://github.com/steverice/visr/blob/main/NOTICE.md).
 
+VISR exists to contribute to the Halo community and to let people do cool things with Halo. The license shouldn't get in the way of whatever you want to do.
+
+All VISR code is licensed under Apache-2.0 so you can use it in any project under any license: another port, a mod, a tool, a dedicated server, a GPL or AGPL project, or something closed. There is no obligation to distribute your code just to play with others. And you're safe from any patent claims by VISR's contributors.
+
 Apple, iPhone, iPad, Apple TV, Mac, Vision Pro and Metal are trademarks of Apple Inc. [Privacy policy](https://code.steverice.org/visr/privacy.html).
 <!-- end generated -->
