@@ -1847,67 +1847,11 @@ void SetTextureStageStateSmart(
 	return;
 }
 
-/* port: the level's own sound starts with its first frame, and its music
-and ambience fade in from there (their tracks' fade-in, a quarter of a second
-or so on a10); the tone stopping outright at that frame left the mix almost
-silent until they had. The tone fades out over SOUND_FADE_MILLISECONDS from
-the volume it has instead, under the level's sound, then stops */
-#define SOUND_FADE_MILLISECONDS 400
-static long progress_bar_sound_volumes[NUMBER_OF_PROGRESS_BAR_SOUNDS];
-static unsigned long progress_bar_sound_fade_started;
-
-static void progress_bar_sounds_stop(
-	void)
-{
-	long sound_index;
-
-	for (sound_index= 0; sound_index<NUMBER_OF_PROGRESS_BAR_SOUNDS; sound_index++)
-	{
-		if (progress_bar_globals.sounds[sound_index])
-		{
-			IDirectSoundBuffer_Stop(progress_bar_globals.sounds[sound_index]);
-			IDirectSoundBuffer_Release(progress_bar_globals.sounds[sound_index]);
-			progress_bar_globals.sounds[sound_index]= NULL;
-		}
-	}
-	progress_bar_sound_fade_started= 0;
-}
-
-static void progress_bar_sounds_fade(
-	unsigned long time)
-{
-	long sound_index;
-	unsigned long elapsed;
-	real gain;
-
-	if (!progress_bar_globals.sounds[0])
-		return;
-	if (!progress_bar_sound_fade_started)
-		progress_bar_sound_fade_started= time ? time : 1;
-	elapsed= time - progress_bar_sound_fade_started;
-	if (elapsed>=SOUND_FADE_MILLISECONDS)
-	{
-		progress_bar_sounds_stop();
-		return;
-	}
-	/* the amplitude falls in a straight line to 0 */
-	gain= 1.f - (real)elapsed/SOUND_FADE_MILLISECONDS;
-	for (sound_index= 0; sound_index<NUMBER_OF_PROGRESS_BAR_SOUNDS; sound_index++)
-	{
-		if (progress_bar_globals.sounds[sound_index])
-		{
-			real volume= progress_bar_sound_volumes[sound_index] + 2000.f*(real)log10(gain);
-
-			IDirectSoundBuffer_SetVolume(progress_bar_globals.sounds[sound_index],
-				(long)(volume<-10000.f ? -10000.f : volume));
-		}
-	}
-}
-
 void progress_bar_eachframe(
 	void)
 {
 	unsigned long time= GetTickCount();
+	long sound_index;
 
 	if (progress_bar_restart)
 	{
@@ -1934,7 +1878,15 @@ void progress_bar_eachframe(
 			IDirect3DTexture8_Release(progress_bar_mode.texture0);
 			progress_bar_mode.texture0= NULL;
 		}
-		progress_bar_sounds_fade(time);
+		for (sound_index= 0; sound_index<NUMBER_OF_PROGRESS_BAR_SOUNDS; sound_index++)
+		{
+			if (progress_bar_globals.sounds[sound_index])
+			{
+				IDirectSoundBuffer_Stop(progress_bar_globals.sounds[sound_index]);
+				IDirectSoundBuffer_Release(progress_bar_globals.sounds[sound_index]);
+				progress_bar_globals.sounds[sound_index]= NULL;
+			}
+		}
 	}
 
 	return;
@@ -2172,10 +2124,8 @@ static void progress_bar_render(
 			t= (sound_progress - ranges[sound_index][0])/(ranges[sound_index][1] - ranges[sound_index][0]);
 		if (progress_bar_globals.sounds[sound_index])
 		{
-			progress_bar_sound_volumes[sound_index]= /* port: for progress_bar_sounds_fade */
-				(long)((real)pow(sin(t*3.1415), 0.3f)*volumes[sound_index] - 5000.f);
 			IDirectSoundBuffer_SetVolume(progress_bar_globals.sounds[sound_index],
-				progress_bar_sound_volumes[sound_index]);
+				(long)((real)pow(sin(t*3.1415), 0.3f)*volumes[sound_index] - 5000.f));
 		}
 	}
 
@@ -2511,11 +2461,8 @@ static void progress_bar_make_stuff_ready(
 	buffer_description.dwBufferBytes= 0;
 	buffer_description.lpwfxFormat= &wave_format.wfx;
 
-	/* port: a tone still fading out from the last screen (progress_bar_sounds_fade) */
-	progress_bar_sounds_stop();
 	for (sound_index= 0; sound_index<NUMBER_OF_PROGRESS_BAR_SOUNDS; sound_index++)
 	{
-		progress_bar_sound_volumes[sound_index]= -5000;
 		if (DirectSoundCreateBuffer(&buffer_description, &progress_bar_globals.sounds[sound_index])<0)
 			return;
 		IDirectSoundBuffer_SetBufferData(progress_bar_globals.sounds[sound_index], compressed_monk_tone,
