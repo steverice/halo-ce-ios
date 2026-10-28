@@ -8,23 +8,23 @@ description = "The geometric mean of the suites that every drawn build has measu
 [campaign]
 description = "The opening of two single-player levels, sampled for 60 seconds after a 15-second warm-up, with no input."
 windows = [
-  { label = "c10" },
+  { label = "c10", shot = "c10" },
   { label = "b30", shot = "b30" },
 ]
 
 [combat]
 description = "Scripted battles in a50 and b40, and a scripted bot player in b30."
 windows = [
-  { label = "a50 hangar" },
-  { label = "b40 exterior" },
-  { label = "b30 bot" },
+  { label = "a50 hangar", shot = "a50-hangar" },
+  { label = "b40 exterior", shot = "b40-exta" },
+  { label = "b30 bot", shot = "b30-bot" },
 ]
 
 [cutscenes]
 description = "Two whole in-engine cutscenes, sampled from start to finish."
 windows = [
-  { label = "x70 bridge" },
-  { label = "a50 rescue" },
+  { label = "x70 bridge", shot = "x70-bridge" },
+  { label = "a50 rescue", shot = "cutscene-rescue" },
 ]
 
 [multiplayer]
