@@ -3960,7 +3960,7 @@ static void lobby_browser_update(struct widget_instance *list)
 			usnprintf(text, ROW_TEXT_LENGTH - 1, L"V%d", game->network_version);
 			text_set(named(row, "server_item_ping", 0), text);
 		}
-		else if (game->from_master)
+		else if (game->from_master && !game->failed && game->open)
 		{
 			text_to_wide(game->region[0] ? game->region : "-", text, ROW_TEXT_LENGTH);
 			text_set(named(row, "server_item_ping", 0), text);
