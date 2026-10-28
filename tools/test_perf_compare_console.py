@@ -149,6 +149,11 @@ def test_opening_is_not_a_console_window():
         consolewin.run_window(WINDOWS['c10'], game.console, Hooks(game), game)
 
 
+def test_numeric_query_skips_echo_fragments_of_earlier_input():
+    game = FakeGame(lambda line, t: 'ist_count (players)) 0) (print "PERF_READY"))\r\n2' if line == '(list_count (players))' else None)
+    assert game.console.query('(list_count (players))', game, numeric=True) == '2'
+
+
 def test_sync_waits_for_the_token_after_queued_echoes():
     game = FakeGame(timed=[(3.0, 'xpsync\r\n')])
     assert game.console.sync(game, timeout=10) is True and game.t >= 3.0

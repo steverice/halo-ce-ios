@@ -87,13 +87,15 @@ class Console:
             clock.sleep(0.1)
         return False
 
-    def query(self, expression, clock, timeout=3.0):
-        """Send an expression and return the value line, or None when the console printed nothing back."""
+    def query(self, expression, clock, timeout=3.0, numeric=False):
+        """Send an expression and return the value line, or None when the console printed nothing back. With
+        `numeric`, lines that are not numbers (echo fragments of earlier input) are skipped."""
         mark = self.mark()
         self.send(expression)
         deadline = clock.now() + timeout
         while True:
-            replies = [line for line in self.lines_since(mark) if line and not line.startswith('(')]
+            replies = [line for line in self.lines_since(mark) if line and not line.startswith('(')
+                       and (not numeric or number(line) is not None)]
             if replies:
                 return replies[0]
             if clock.now() >= deadline:
@@ -120,8 +122,8 @@ class Hooks:
     def end(self): ...
 
 
-def _read_all(console, expressions, clock):
-    return {expression: console.query(expression, clock) for expression in expressions}
+def _read_all(console, expressions, clock, numeric=False):
+    return {expression: console.query(expression, clock, numeric=numeric) for expression in expressions}
 
 
 def _living(window):
@@ -230,14 +232,14 @@ def run_session(window, console, hooks, clock):
     clock.sleep(window['warmup_s'])
     console.sync(clock)
     hooks.prepare()
-    start_reads = _read_all(console, window['fingerprints'], clock)
+    start_reads = _read_all(console, window['fingerprints'], clock, numeric=True)
     hooks.begin()
     started = clock.now()
     clock.sleep(window['sample_s'] / 2)
     hooks.mid()
     clock.sleep(max(0.0, window['sample_s'] - (clock.now() - started)))
     seconds = clock.now() - started
-    end_reads = _read_all(console, window['fingerprints'], clock)
+    end_reads = _read_all(console, window['fingerprints'], clock, numeric=True)
     hooks.end()
     return {'kind': window['kind'], 'seconds': seconds, 'start': start_reads, 'end': end_reads, 'ended': 'time'}
 
