@@ -17,8 +17,11 @@ Automated system link sessions for testing the netcode without the menus
   the system link list does;
 - "browse" joins the first game the server browser lists (internet play's
   public games: a host's with debug.network_test_public), as picking it
-  there does, and then as "join";
-- "browse-only" logs the browser snapshot without joining a game.
+  there does, and then as "join". It never picks a game the OpenCE master
+  lists: those are strangers' public servers;
+- "browse-only" logs the browser snapshot without joining a game;
+- "browse-empty" joins the first master-listed server with no players, on a
+  stock map and without a password, then as "join".
 
 Once the game runs, every second each machine logs where every player's
 unit is, so the machines' views of the game can be compared.
@@ -141,6 +144,7 @@ static struct
 	boolean public_game;
 	boolean browsing;
 	boolean browse_only;
+	boolean browse_empty;
 	boolean suite_owned;
 	boolean suite_synthetic_added;
 	unsigned long suite_setup_input_ticks;
@@ -683,10 +687,11 @@ static void network_test_read_settings(
 	{
 		network_test.mode = _network_test_join;
 	}
-	else if (!strcmp(setting, "browse") || !strcmp(setting, "browse-only"))
+	else if (!strcmp(setting, "browse") || !strcmp(setting, "browse-only") || !strcmp(setting, "browse-empty"))
 	{
 		network_test.mode = _network_test_browse;
 		network_test.browse_only = !strcmp(setting, "browse-only");
+		network_test.browse_empty = !strcmp(setting, "browse-empty");
 	}
 	network_test.players_wanted = (short)config_integer("debug.network_test_players");
 	network_test.public_game = config_boolean("debug.network_test_public") != 0;
@@ -1527,8 +1532,9 @@ void network_test_update(
 	{
 	case _network_test_browse:
 	{
-		struct p2p_listing games[8];
-		int count;
+		/* (static: the whole browser, master rows included, is too large for the stack) */
+		static struct p2p_listing games[896];
+		int count, index;
 
 		if (!network_test.browsing)
 		{
@@ -1542,16 +1548,26 @@ void network_test_update(
 			break;
 		}
 		count = p2p_lobby_games(games, NUMBEROF(games));
-		/* (the first that can be joined: no password, not failed) */
-		while (count > 0 && (!games[0].invite[0] || games[0].failed))
+		/* (the first that can be joined: no password, not failed. A master-listed
+		server is a stranger's: only an empty one, and only when asked for) */
+		for (index = 0; index < count; index++)
 		{
-			memmove(games, games + 1, sizeof(*games) * (count - 1));
-			count--;
+			const struct p2p_listing *game = &games[index];
+
+			if (!game->invite[0] || game->failed)
+				continue;
+			if (network_test.browse_empty ? game->from_master && !game->player_count && game->open &&
+				game->joinable && p2p_listing_map_kind(game) == P2P_MAP_STOCK : !game->from_master)
+			{
+				break;
+			}
 		}
-		if (count > 0 && p2p_join_invite(games[0].invite))
+		if (index < count && p2p_join_invite(games[index].invite))
 		{
 			p2p_lobby_browse(FALSE);
-			platform_log("network test: joining %s's game (%s) from the server browser", games[0].name, games[0].map);
+			platform_log("network test: joining %s's game (%s, %u/%u players, %s) from the server browser",
+				games[index].name, games[index].map, (unsigned)games[index].player_count,
+				(unsigned)games[index].maximum_player_count, games[index].from_master ? "master-listed" : "broker");
 			network_test.mode = _network_test_join;
 		}
 		break;

@@ -1248,7 +1248,8 @@ static const struct config_setting config_settings[] =
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"
-		"\"browse-only\" logs public games without joining; empty for none." },
+		"\"browse-only\" logs public games without joining, \"browse-empty\" joins an\n"
+		"empty master-listed server; empty for none." },
 	{ "debug.multiplayer_benchmark_probe", _config_boolean, "false", "HALO_MULTIPLAYER_BENCHMARK_PROBE",
 		_environment_value, _platform_all,
 		"In a four-local-player automated Chill Out Slayer match, draw only player\n"

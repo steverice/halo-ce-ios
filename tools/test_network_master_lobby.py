@@ -113,12 +113,13 @@ def test_browse_only_logs_rows_without_joining(tmp_path):
 #define NUMBEROF(a) (sizeof(a)/sizeof((a)[0]))
 #define _network_test_browse 3
 #define _network_test_join 2
-static struct { int browsing, browse_only, mode; } network_test;
+static struct { int browsing, browse_only, browse_empty, mode; } network_test;
 static int logs, joins, opens;
 static struct p2p_listing row;
 static void platform_log(const char *format, ...) { (void)format; logs++; }
 static int p2p_join_invite(const char *invite) { (void)invite; joins++; return 1; }
 static void p2p_lobby_browse(int on) { opens+=on; }
+int p2p_listing_map_kind(const struct p2p_listing *listing) { (void)listing; return P2P_MAP_STOCK; }
 static int p2p_lobby_games(struct p2p_listing *games,int max) { assert(max>0); games[0]=row; return 1; }
 /* HELPER */
 static void update(void) { switch(network_test.mode) { /* BRANCH */ } }
@@ -129,6 +130,11 @@ int main(void) {
     update(); assert(joins==0 && opens==1 && logs>=2);
     int first=logs; update(); assert(joins==0 && logs==first);
     strcpy(row.region,"EU"); update(); assert(joins==0 && logs>first);
+    /* "browse" never joins a master-listed stranger's server; "browse-empty" joins only an empty one */
+    network_test.browse_only=0; row.open=1; row.joinable=1;
+    update(); assert(joins==0);
+    network_test.browse_empty=1; update(); assert(joins==0);
+    row.player_count=0; update(); assert(joins==1 && network_test.mode==_network_test_join);
     return 0;
 }
 '''
