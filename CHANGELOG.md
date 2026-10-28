@@ -1,3 +1,126 @@
+## visr-v0.6.2 (2026-10-28)
+
+### Summary
+
+- Server browser: each server now shows an icon for its kind (dedicated, player-hosted, or LAN), and the selected row's rules line names the kind.
+- Server browser: dedicated servers stay listed while the browser is open. Servers whose join failed or that have closed now show FAILED or CLOSED instead of looking joinable.
+- Server browser: a game also found through a broker now shows its live player count, and servers with no region listed no longer disappear.
+- Mac: with an unlimited or high frame rate cap, frames now wait for the display instead of being drawn and thrown away.
+- Lighting effects now render more efficiently, which may help in busy multiplayer scenes. Check for any odd-looking light effects.
+- External displays: the display now stays in its native mode and VISR scales the picture itself, so a slow monitor no longer gets stepped down to a lower mode. Try plugging in an external display.
+- Pro-class iPhones can now output to an external display at a higher resolution. Look for sharper output.
+- Data packs: a cache the system partly purged now recovers instead of getting stuck on "Pack sequence was already seen."
+
+iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
+
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
+
+VISR automatically sends game performance data to improve the game. Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. Performance diagnostics are required in builds with performance reports enabled. Sharing this data is part of testing; leaving the beta stops it.
+
+### Full changelog
+
+### feat
+
+- **site**: list Overall first in the benchmarks suite bar — `SUITE_CHOICES` now leads with `overall`; Campaign stays the default suite
+- **benchmarks**: add Chupathingy and fill the Mac matrix gaps — Chupathingy v0.8.0h runs all seven windows on two Macs timed at its frame swap, with no GPU time per frame; CoreCE and Halo OG's M6 bot windows and Halo OG's a50-hangar are now measured; the partial-suite caption names OpenGL's missing GPU time
+- **perf-compare**: repeat an empty Metal capture with the swap shim — when `metalperftrace` returns a layer with no per-frame timeline, the repeat times `CAMetalLayer nextDrawable` with the `glft` shim, which matched `metalperftrace` to the digit on two ports
+- **perf-compare**: time OpenGL ports at their frame swap — `glft.m` is inserted into the app and timestamps each `flushBuffer` or `CGLFlushDrawable` call, `glft.py` turns the log into intervals, and Chupathingy runs through it with its documented uncapped environment, a viewport check for the drawable, and no GPU time
+- **benchmarks**: draw a suite bar only for builds with every window of that suite — the Mac chart lists a build with only some windows as `not measured in Combat: a50-hangar, b30-bot` instead of averaging fewer windows, and Overall covers the suites at least one drawn build has complete and leaves out builds missing one
+- **network**: show a kind icon for each server in the browser — `p2p_listing_server_kind` tells dedicated (master-listed or flagged), player-hosted and Delta-listed internet rows apart and system link rows are LAN games; `dedicated_icon` gains a player, a triangle and a linked-machines frame beside the rack, and the chosen row's rules line names its kind; a row nothing identifies keeps its old look
+- **benchmarks**: add Halo OG to the Mac suites and list GPU time under Overall — Overall now shows the geometric mean of each suite's GPU time per rendered frame instead of claiming there is none, Halo OG's rows say it is limited by CPU command submission rather than a frame cap, and the static Mac chart is regenerated
+- **perf-compare**: pass diagnostic debug keys through the config — `debug_keys` adds lines such as `gpu_stats` to a run's `[debug]` section
+- **benchmarks**: chart the Mac's combat and cutscenes suites at 2560×1920 — adds the VISR 0.6.1, OpenCE-macOS v1.0.2 and CoreCE build 44 rows from two Mac minis to the snapshot, filters the Mac chart on the 2560×1920 drawable, and flags a build that lacks a window another drawn build has
+- **perf-compare**: size CoreCE and Halo OG by `window_scale` and run Halo OG uncapped — both ports ignore `window_size`; their documented `display.window_scale` (with `HALO_WINDOWED=1` for Halo OG) gives a 2560×1920 drawable, and Halo OG gets the `frame_limit` and `vsync` uncapped keys
+- **perf-compare**: let a port name its own drawable — Halo OG always renders at the display's full size, so `target.drawable` replaces the matrix drawable in the resolution check and the record
+- **perf-compare**: launch Chupathingy and Halo OG through their environment console switches — both take `HALO_TELNET_CONSOLE`, the port and the window mode from the environment and an isolated `HOME`; Chupathingy gets no `config.toml`
+- **perf-compare**: pin a target to a release tag — `refresh.fetch` honors a target's `tag`, so a matrix keeps measuring the build it names when newer releases appear
+- **perf-compare**: add the combat and cutscenes suites to the sheet, snapshot and page — `sheet_export.py` gains `drawable`, `window_kind`, `cpu_ms_p50`, `gpu_ms_p50` and `fingerprint` (optional for older sheets in `sheet_fetch.py`), per-window suites from `windows.toml`, `not_measured` rows with their reason, and the methodology describes the new windows once the data has them
+- **perf-compare**: plan and read VISR device runs per window — `device_plan.py` builds the `init.txt` lines and debug keys (hosted game plus `init_after` for console windows), and `device_log.py` aligns the frame log and renderer lines on the guest frame number to give the results columns plus `cpu_ms_p50` and `gpu_ms_p50`
+- **perf-compare**: reject console windows that did not measure what they name — `rejects.py` applies the cutscene length, placement, checkpoint-reload and bot tick/grenade rules, flags out-of-range rounds in `notes`, and `Console.seen` accepts the unterminated print the game writes
+- **perf-compare**: run battle, cutscene and bot windows from the console — `consolewin.py` drives `Console` sessions (deathless player, command batch, script-to-print sampling, tick-defined bot window), `adapters._native` splits its sampling into begin/end hooks, and targets without a console record `window_status` `not_measured`
+- **perf-compare**: add a 2560×1920 Mac drawable — `adapters.native_display` takes a `drawable` (VISR `window_scale = 2`, OpenCE-macOS and CoreCE `window_size = "1280x960"`), `HALO_HOST_DISPLAY` follows it, runs carry it, and `metalperftrace` waits 3 s after `setup`
+- **perf-compare**: define sampling windows as data — `windows.toml` and `windows.py` describe each window's suite, map, kind and console commands, and `refresh.validate_config` takes window keys instead of the hard-coded `a10`/`b30` pair (legacy `scenarios` still resolve)
+- **perf-compare**: cover only the suites every drawn build has measured in Overall — `charts.py` and `benchmarks.js` now compute the Overall bar per chart over the suites that every ticked build has measured, name them in the caption, and add the `combat` and `cutscenes` suites
+- **net**: list signed OpenCE master servers — reuse verified listings and invite joins
+- **benchmarks**: print each bar's value and a higher or lower is better note under every chart — `labelBars` in `benchmarks.js` reads the chart's Mermaid text and prints fps to one decimal and milliseconds to two after each category's longest bar, one `average / low` label where two series overlap, in the container's text color, for the live and the static SVG charts; `direction_note` derives "Higher is better." or "Lower is better." (or the mixed form) from the charted metrics for the page, the Markdown and the site; the value axis gains headroom for the labels
+- **shaders**: add 1 validated pipeline to the `a10` list — a tester's 0.6.1 Full-suite report captured 80 recorded lines on the `a10`, `a50`, `b30` and `b40` maps, but only this pipeline passes the pixel-shader descriptor and dependency checks of `host_shader_pack.c`; the other 79 (pixel shaders with texture-mode bytes outside the guest ABI, and the pipelines that depend on them) are kept out of the list
+
+### fix
+
+- **loading**: fade the loading chant out under the level's first sound instead of cutting it — the level's music and ambience fade in over about 250 ms from its first frame, and `progress_bar_eachframe` stopped the chant outright about 75 ms in, leaving the mix about 10 dB down for about 120 ms at the handover; the chant now fades from its last volume to silence over 400 ms, then stops
+- **perf-compare**: keep the swap-log tests off a macOS-only clock — `time.CLOCK_UPTIME_RAW` does not exist on Linux, so the portable tooling job failed; `glft.uptime_ns` falls back to the monotonic clock
+- **perf-compare**: poll game time for Chupathingy's console windows — its console does not return a script's delayed prints, so cutscene and bot windows end on the tick count, and a window that never opened is an empty capture to repeat
+- **perf-compare**: do not call a slow simulation a checkpoint revert — a battle is rejected as reverted only when game time falls back or advances under half the sample's ticks
+- **perf-compare**: skip the settings text for ports that have no config file — Chupathingy has none, so its uncapped run takes its frame limit from the environment
+- **perf-compare**: place device windows in seconds on the frame log clock — `device_log.window_columns` converted seconds to frames with the display rate, which put the window past the log's end on a device below that rate (the Apple TV HD at 30 fps, a battle at 12 fps); it now converts the init marker's guest frame to seconds and also returns `cpu_ms_p95` and `gpu_ms_p95`
+- **upscale**: read important-usage capacity for the storage check — `storage_available` used the opportunistic figure, which iOS reports far below real free space under storage pressure (0 MB with 19 GB free), so on-device upscaling refused to start. It now logs the important, opportunistic and volume figures when they change and gates on important-usage capacity, keeping the reserve logic in `texture_cache_background_may_run`.
+- **perf-compare**: remove Halo OG's downloaded community maps after each run — each run left a 1 GB `Community Maps` folder in its save root
+- **perf-compare**: remove Halo OG's per-run maps copy when the run ends — each run left a multi-GB copy of the game data that filled the job store
+- **perf-compare**: end only the window whose trace stays empty — three empty captures of one window now mark that window unavailable with its reason and the target's other windows still run
+- **perf-compare**: repeat a round whose trace holds no frames — one empty `metalperftrace` capture ended the whole target as unavailable; it now rejects the attempt, repeats the round up to twice, and ends the target only after the third empty capture
+- **perf-compare**: launch Halo OG from the run folder with a real maps copy — its console never came up with a symlinked maps folder and the app's own folder as the working directory
+- **perf-compare**: read a console window's end counts before the trace is collected — the collect takes tens of seconds, so the end ticks and enemy counts described a later moment than the sample
+- **perf-compare**: prepare the trace before a console window opens — the 3 s settle and the CPU baseline ran inside `begin` and cut about 8 s from the battle and bot samples, so `Hooks.prepare` now runs them first and `begin` only marks the start
+- **profiles**: widen the A17 Pro and 17 Pro fallback envelopes for the external caps — `iphone-a17-pro` and `iphone-17-pro` in `catalog.toml` bounded pixels below the new 1440- and 1600-line wired-display allocations, so the iPhone 16 stopped inheriting `iphone-15-pro.toml`; `profile_probe.c` also expects the iPad Air 3's own `ipad-a12.toml`. Profile set revision 14
+- **network-test**: never join a master-listed server from `browse` — dedicated servers sort first, so the `browse` runner mode, meant for a test's own public host, would join a stranger's populated server; it now skips master-listed rows, and `browse-empty` joins only an empty, unlocked, master-listed server on a stock map
+- **net**: ask the master again each minute while the browser is open — the lobby drops master rows five minutes after the last answer and only opening or Refresh asked again, so every dedicated server vanished from a browser left open; `master_pass` now asks once a minute while browsing (the master allows 60 a minute), never while closed
+- **net**: accept a master entry without a region — `master_read_game` dropped every entry whose unsigned, display-only `region` was missing or null, which hid the whole server
+- **menu**: show FAILED and CLOSED on master-listed browser rows — a master-listed row always showed its region in the ping column, so a server whose join had failed or that had closed looked joinable
+- **net**: keep the live broker listing for a master-listed game — `p2p_lobby_games` put the master's copy first, so a game also heard on a broker showed the master's player count for up to five minutes instead of the broker's live one; the broker row now stays and takes the master's provenance and region
+- **benchmarks**: take "Last measured" from every row the page shows — `render_page` and `render_site_page` read the date from `summary["records"]` only, so the sheet rows measured on 2026-10-27 left the page saying 2026-10-26; `last_measured` in `page.py` now takes the newest date among the summary and the rows, and a test checks that a newer row moves it
+- **benchmarks**: stop the 1% low bar covering the average and the doubled not-measured text — a capped run's 1% low rounds above its average, so the second series hid the first; a low above the average is now drawn at the average in `charts.py` and `benchmarks.js` and the static SVGs are regenerated, and the `not measured yet` reason reads "Not run on this device yet." so the Builds list no longer says "Not measured: Not measured yet."
+- **site**: give the benchmarks page the shared icon and social-card tags — `benchmarks.html` had no `apple-touch-icon`, which Safari uses for tab and favorites icons; `tools/site_head_icons.html` and `tools/site_head_social.html` now feed both `tools/build_site.py` and the benchmarks page generator, so the two pages' heads cannot drift
+- **display**: keep an external display in its native mode and scale in VISR — `host_external_poll` asked for non-native modes to match the profile's output height, and a slow monitor's late switch was read as the display changing itself, which re-chose and walked the monitor down. The profile height now bounds only the drawable (`host_external_mode_drawable`), `host_external_fit` scales it, and a mode change the display makes on its own is followed without a new request
+- **data-packs**: recover from a partly purged cache — a pack the system purged left `state.json` naming it, so `beginLaunch` quarantined it and the feed's same sequence read "Pack sequence was already seen" forever
+- **benchmarks**: report GPU time per rendered frame, not per shown frame — a game that renders several frames for each frame it shows has all their GPU time added to the next shown frame by metalperftrace, which overstated VISR's uncapped GPU time; `parse_metal_trace_gpu` now splits each shown interval's `On-GPU Time` by its command buffers (the usual count per interval is one rendered frame) and `gpu_metrics` takes the median and 90th percentile over rendered frames; the 24 backfilled uncapped Mac rows are recomputed from their stored traces, and the column descriptions, the Mac paragraph, captions and Methodology say per rendered frame
+
+### perf
+
+- **render**: draw a light volume's sprites in one draw — every sprite of a light volume was its own immediate-mode triangle fan, about 245 a frame at 32 players on Blood Gulch, and although `debug.immediate_merge` already joined them into about 12 draws, each still paid its own `End` and `prepare_draw`; `light_volume_render` now opens one quad list around the volume's sprites (`rasterizer_widget_sprite3d_batch_begin` and `_end`, `rasterizer_xbox_widgets.c`), and `_rasterizer_widget_draw_sprite3d` adds each sprite as a quad of it
+- **profiles**: raise the external display cap on Pro-class iPhones — `iphone-15-pro.toml` (15 Pro, 16 Pro, 17, Air) renders external output at up to 1440 lines and `iphone-17-pro.toml` at up to 1600, in place of the 1080 placeholder from `iphone-ipad.toml`; estimated from native built-in measurements, evidence marked assumed, profile revision 13
+- **macos**: unsynchronized frames wait for their drawable instead of being drawn and not shown — with `display.frame_rate` "unlimited" or a cap above the display's rate, a frame that found no drawable ready was drawn and thrown away; on a10 the Mac app drew about 2,550 frames a second and showed about 585, and waiting shows as many, so Present now waits in `nextDrawable` as a frame at the display's rate does, and the "Metal drawables" thread and `free_drawable_take` go
+
+### refactor
+
+- **perf-compare**: name the device CPU column `cpu_p50_ms` and drop the duplicate GPU column — the sheet already has `gpu_p50_ms`, and `cpu_p50_ms` matches the frame-cost naming
+
+### build
+
+- **profiles**: re-sign the generation 2 tester shards at profile revision 14 and add the iPad Air 3 — every `docs/site/packs/tester/device-profiles-2/` shard is sequence 1793167527 from the revision 14 `profiles/` tree (the Pro-class external display caps, the widened A17 Pro and 17 Pro envelopes and `ipad-a12.toml`), which 0.6.0 and 0.6.1 validators accept; `ios/iPad11,3/_` and `ios/iPad11,4/_` are new. `docs/site/packs/tester/publication.json` names the 55 SHA-256s and `tools/test_pages_main_assets.py` counts them.
+- **benchmark**: bind the 20-case tester catalog to the 0.6.2 guest at its own feed — `docs/site/packs/tester/recordings-36970174a94fd63fb36d43dadf6011911db23fb49f68291beca46b4d71963c0f.json` is the 0.6.1 catalog with its trimmed recordings, signed as sequence 1793167195 with compatibility `benchmark-catalog-1:36970174a94fd63fb36d43dadf6011911db23fb49f68291beca46b4d71963c0f`, which 0.6.2 builds read; the older feeds stay byte-identical, and `docs/site/packs/tester/publication.json` and `tools/test_pages_main_assets.py` name the new envelope's SHA-256
+- **release**: publish the signed latest-release record for 0.6.1 — `docs/site/packs/tester/latest.json` is sequence 1793130899 under `latest-release-1` and names 0.6.1 for iOS, tvOS, visionOS and macOS; `docs/site/packs/tester/publication.json` names its SHA-256
+
+### revert
+
+- hold the loading-chant fade for the 0.6.2 cut [skip ci] — reverts `f56c5695d`, so this commit's tree is `6a9e67f69`'s and the release is cut from it; the fade returns right after the tag for 0.6.3
+- **upscale**: gate background upscaling on opportunistic capacity again — the 0 MB reading on the phone was real (it had 0 bytes available), and important-usage capacity let background upscaling fill a phone to within its 256 MB reserve; this reverts `8feb6eae3`
+
+### docs
+
+- **benchmarks**: word the partial-suite reason plainly — drops the doubled "Not measured: Not drawn" in the build list
+- **benchmarks**: refresh the Mac rows with Halo OG's third x70-bridge round — its M6 Cutscenes windows are complete for x70-bridge, and the charts now list builds that lack a suite's other windows
+- **site**: drop the community sentence from the license paragraphs in the legal text
+- **site**: move the Apache-2.0 paragraphs into the shared legal text, without a heading — they now close the page footer and the README's Legal section
+- **site**: add a "Permissive license" highlight with an open-padlock icon — a fourth card next to sync, performance and community
+- **site**: add a "Permissive license" section — what Apache-2.0 lets people do with VISR's code
+- **benchmarks**: add the iPad Pro rows — VISR 0.6.0 (a10, b30), Beeman apple-v0.3.0 and ChupathingyCE iOS v0.2.0 (a10) at 120 fps, with HaloPad and SnailBBQ listed as not measured yet; the iPhone and iPad captions list the windows a build still lacks (`query.windows`), chart labels mark a pre-release, and `reasons.toml` gains the `not measured yet` sentence
+- **benchmarks**: chart average fps with GPU frame time for uncapped runs, keep the 1% low and add on-time share for capped and device runs — the results sheet gains `gpu_p50_ms` and `gpu_p90_ms` (mean over the valid rounds of each round's median and 90th-percentile `On-GPU Time` per presented frame from the metalperftrace trace; `parse_metal_trace_gpu` and `gpu_metrics` record them for new runs and the existing uncapped Mac rows are filled from their stored traces), the Mac chart drops the 1% low series and lists the GPU times under the chart, the iPhone/iPad and Apple TV captions list on-time share, charts honor `query.metrics` so a chart without `fps_1pct_low` draws one series, and Methodology gains an Uncapped charts paragraph
+- **changelog**: give 0.6.1 the What to Test text as its summary — the generated summary listed the device-profile changes, which reach 0.6.0 builds through the profile feed too, as app changes; the section's summary is now the text the builds carry
+
+### test
+
+- **perf-compare**: use an exact mach timebase in the `glft` interval test
+- **perf-compare**: compare `parse_metal_trace_gpu` pairs through a flat list — pytest 9 rejects `pytest.approx` on a list of tuples
+
+### chore
+
+- **perf-compare**: drop a host name from a comment — the swap-shim fallback comment named one of the benchmark hosts
+- **profiles**: add `ipad-a12.toml` for the iPad Air 3 with measured evidence — a tester's 0.6.1 Full-suite report ran 20 presented runs at 30 frames a second and 900 lines (a10, a50, b30, b40, c20, c40, d40, up to 2x enemies), 99.8 to 100% on time, thermal 0 to 3, so the values the A10X iPad profile gave it stay; 60 is not claimed (GPU 90th percentile up to 28 ms, CPU 95th percentile about 20 ms); `catalog.toml` marks `ipad-a12` measured and gains its fallback entry, profile set revision 12
+
+### style
+
+- **site**: keep the benchmarks suite bar at the top of the screen while scrolling — `.bench-bar` is `position: sticky` with the page background, and a background-colored shadow covers the strip above its border behind the legend
+
 ## visr-v0.6.1 (2026-10-27)
 
 ### Summary
