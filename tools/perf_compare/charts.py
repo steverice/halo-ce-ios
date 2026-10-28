@@ -24,7 +24,7 @@ BEGIN = "<!-- BEGIN CHARTS -->"
 END = "<!-- END CHARTS -->"
 
 SUITES = ("campaign", "combat", "cutscenes", "multiplayer", "co-op")
-SUITE_CHOICES = (*SUITES, "overall")
+SUITE_CHOICES = ("overall", *SUITES)
 SUITE_NAMES = {"campaign": "Campaign", "combat": "Combat", "cutscenes": "Cutscenes", "multiplayer": "Multiplayer",
                "co-op": "Co-op", "overall": "Overall"}
 DEFAULT_SUITE = "campaign"
