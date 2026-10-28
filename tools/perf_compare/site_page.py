@@ -202,7 +202,7 @@ def render_site_page(summary: dict, rows: list[dict], specs: list[dict], legal_h
 <main class="page page-bench" id="bench-root" data-csv="benchmarks/results.csv">
 <h1>Performance benchmarks</h1>
 {intro.rstrip()}
-<fieldset class="bench-bar"><legend>Suite</legend><div class="suite-pills">{suites}</div>{panels}</fieldset>
+<fieldset class="bench-bar"><legend>Suite</legend><div class="suite-pills"><span class="suite-label" aria-hidden="true">Suite</span>{suites}</div>{panels}</fieldset>
 {body}
 <div class="method">
 {method.replace("<h2>Methodology</h2>", "<h2>Methodology</h2>", 1).rstrip()}

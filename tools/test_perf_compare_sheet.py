@@ -947,3 +947,11 @@ def test_the_sticky_suite_bar_is_translucent_with_a_blur_and_keeps_its_full_widt
     assert re.search(r"color-mix\(in srgb, var\(--bg\) 8[5-9]%, transparent\)", bar)
     assert "width: 100vw" in bar and "border-bottom: 1px solid var(--line)" in bar
     assert "display: contents" in css and ".suite-text { order: 2; flex: 1 1 100%" in css
+
+
+def test_the_suite_label_wraps_with_the_pills_and_the_legend_takes_no_room_so_the_bar_background_covers_its_whole_box():
+    css = (ROOT / "docs/site/style.css").read_text()
+    legend = re.search(r"\.bench-bar legend \{([^}]*)\}", css).group(1)
+    assert "position: absolute" in legend and "float" not in legend
+    html = (ROOT / "docs/site/benchmarks.html").read_text()
+    assert re.search(r'<legend>Suite</legend><div class="suite-pills"><span class="suite-label" aria-hidden="true">Suite</span><label>', html)

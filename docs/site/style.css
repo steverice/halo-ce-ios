@@ -227,8 +227,11 @@ section > p > img { display: block; width: 100%; border-radius: 16px; }
    description and window screenshots beside or under it. The bar sticks to the top only where there is room for it. */
 .bench-bar { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; min-width: 0; border: 0;
   padding: var(--space-3) 0; margin: var(--space-5) 0 var(--space-2); }
-.bench-bar legend { float: left; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0; margin-right: var(--space-3); line-height: 2.2; }
-.suite-pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* The legend names the group for assistive technology only; taking no room, it leaves the bar's whole box to the ::before background.
+   The visible "Suite" label is the first item of the pills' row, so it wraps with the pills and never takes a row of its own. */
+.bench-bar legend { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.suite-label { margin-right: 6px; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.suite-pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
 .bench-bar label { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line);
   border-radius: var(--radius-pill); font-size: 0.9rem; cursor: pointer; user-select: none; }
 .bench-bar label:hover { border-color: var(--accent); }
@@ -262,7 +265,7 @@ section > p > img { display: block; width: 100%; border-radius: 16px; }
   }
   body { overflow-x: clip; }
 }
-@media (max-width: 599px) { .bench-bar legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .bench-bar { padding-top: 0; margin-top: var(--space-4); } .suite-shots { margin-left: 0; order: 2; flex-wrap: wrap; flex: 1 1 100%; } .suite-text { order: 1; } .suite-shots li, .suite-shots img { width: 52px; } .suite-shots img { height: 32px; } .suite-shots span { white-space: normal; margin-inline: 0; } }
+@media (max-width: 599px) { .suite-label { display: none; } .bench-bar { padding-top: 0; margin-top: var(--space-4); } .suite-shots { margin-left: 0; order: 2; flex-wrap: wrap; flex: 1 1 100%; } .suite-text { order: 1; } .suite-shots li, .suite-shots img { width: 52px; } .suite-shots img { height: 32px; } .suite-shots span { white-space: normal; margin-inline: 0; } }
 
 .bench { margin: 0 0 24px; padding-top: 36px; margin-top: 36px; }
 .bench > h2 { font-size: 1.5rem; margin-bottom: 8px; }
