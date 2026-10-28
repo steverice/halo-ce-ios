@@ -194,7 +194,7 @@ def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None
     # does not cover the average bar.
     lows = [min(e["value"]["low"], e["value"]["avg"]) if e["value"]["low"] is not None else 0 for e in drawn]
     with_lows = bool(known)
-    y_max = chart.get("y_max", _nice_ceiling(max(averages + known) * 1.08))
+    y_max = chart.get("y_max", _nice_ceiling(max(averages + known) * 1.25))
     head = "xychart-beta horizontal" if chart.get("horizontal") else "xychart-beta"
     quoted = ", ".join('"' + label + '"' for label in labels)
     lines = [header_text(chart), head, f'    title "{chart_title(spec, built, suite)}"',
@@ -203,6 +203,27 @@ def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None
              f"    bar [{', '.join(_number(v) for v in averages)}]",
              f"    bar [{', '.join(_number(v) for v in lows)}]" if with_lows else ""]
     return "\n".join(line for line in lines if line)
+
+
+def _lower_is_better(column: str) -> bool:
+    return column.endswith("_ms") or column.startswith(("gpu_", "cpu_", "frame_cost"))
+
+
+def direction_note(spec: dict, built: dict | None = None) -> str:
+    """"Higher is better." or "Lower is better." from the charted metrics; a chart that mixes directions says which
+    series each applies to. With `built`, a chart that draws no 1% low series leaves it out."""
+    columns = list(spec["query"]["metrics"])
+    labels = spec["series_labels"]
+    if built is not None and not has_lows(built):
+        columns, labels = columns[:1], labels[:1]
+    lower = [_lower_is_better(column) for column in columns]
+    if all(lower):
+        return "Lower is better."
+    if not any(lower):
+        return "Higher is better."
+    higher_names = ", ".join(label for label, flag in zip(labels, lower) if not flag)
+    lower_names = ", ".join(label for label, flag in zip(labels, lower) if flag)
+    return f"Higher is better for {higher_names}; lower is better for {lower_names}."
 
 
 def has_lows(built: dict, selected: set[str] | None = None) -> bool:
@@ -284,7 +305,7 @@ def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE, rea
     if text is None:
         parts.extend([empty_text(spec, built), ""])
     else:
-        parts.extend(["```mermaid", text, "```", "", legend(spec, built), "", caption(built, None, spec["query"].get("details"), "markdown", spec["query"].get("windows")), ""])
+        parts.extend(["```mermaid", text, "```", "", legend(spec, built), "", direction_note(spec, built), "", caption(built, None, spec["query"].get("details"), "markdown", spec["query"].get("windows")), ""])
     for kind, heading in (("not_supported", "Not supported"), ("not_measured", "Not measured")):
         skipped = [e for e in built["entries"] if e["value"] is None and e["kind"] == kind]
         if skipped:

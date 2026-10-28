@@ -27,11 +27,13 @@ config:
 xychart-beta horizontal
     title "Campaign: uncapped fps, M6 Mac mini"
     x-axis "Port and version" ["VISR 0.6.0", "OpenCE v1.0.2", "CoreCE 0.3.0"]
-    y-axis "Frames per second" 0 --> 800
+    y-axis "Frames per second" 0 --> 1000
     bar [705, 620, 309.9]
 ```
 
 🟦 Average fps
+
+Higher is better.
 
 M6 Mac mini. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; 0.48 ms median GPU time per rendered frame, 0.73 ms 90th-percentile GPU time per rendered frame); [OpenCE-macOS v1.0.2](https://github.com/channelramble/OpenCE-macOS/releases/tag/v1.0.2) (build 2, measured 2026-10-26; 0.55 ms median GPU time per rendered frame, 0.75 ms 90th-percentile GPU time per rendered frame); [CoreCE 0.3.0](https://github.com/mastercheese-dev/CoreCE/releases/tag/build-44) (build 44, measured 2026-10-26; 0.81 ms median GPU time per rendered frame, 1.11 ms 90th-percentile GPU time per rendered frame).
 
@@ -61,6 +63,8 @@ xychart-beta horizontal
 
 🟦 Average fps 🟨 1% low fps
 
+Higher is better.
+
 M1 iPad Pro. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; no on-time share reported); [Beeman apple-v0.3.0](https://github.com/bmanturner/halo-ce-universal/releases/tag/apple-v0.3.0) (build unknown, measured 2026-10-27; no on-time share reported; b30 not measured yet); [ChupathingyCE iOS v0.2.0 (pre-release)](https://github.com/JizzyRivers/chupathingyce-ios/releases/tag/v0.2.0) (build 0.8.0h-dev d7fafc8, measured 2026-10-27; no on-time share reported; b30 not measured yet).
 
 Not measured: [HaloPad v0.3.12](https://github.com/chrissotraidis/projectreach/releases/tag/v0.3.12) (Not run on this device yet.); [SnailBBQ v0.2.118-beta](https://github.com/SnailBBQ/Halo-CE-IOS/releases/tag/v0.2.118-beta) (Not run on this device yet.).
@@ -89,6 +93,8 @@ xychart-beta horizontal
 
 🟦 Average fps 🟨 1% low fps
 
+Higher is better.
+
 Apple TV HD. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; no on-time share reported).
 
 ### Vision Pro
@@ -108,12 +114,14 @@ config:
 xychart-beta horizontal
     title "Campaign: fps at display rate, M2 Vision Pro"
     x-axis "Port and version" ["VISR 0.6.0", "master-chef 1.0.3"]
-    y-axis "Frames per second" 0 --> 100
+    y-axis "Frames per second" 0 --> 150
     bar [89.4, 29.8]
     bar [76.8, 0]
 ```
 
 🟦 Average fps 🟨 1% low fps
+
+Higher is better.
 
 M2 Vision Pro. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; 11.8 ms 95th-percentile frame time, 94.1% of frames on time); [master-chef 1.0.3](https://github.com/mitchaiet/master-chef/releases/tag/v1.0.3) (build 103, measured 2026-10-27; no frame times reported).
 

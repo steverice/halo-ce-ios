@@ -33,7 +33,7 @@ def main() -> int:
                 target.unlink(missing_ok=True)
                 continue
             # benchmarks.js adds the gridlines and the even margin (finishChartSvg), as the live page does.
-            svg = page.evaluate("async (s) => finishChartSvg((await mermaid.render('static', s)).svg)", text)
+            svg = page.evaluate("async (s) => finishChartSvg((await mermaid.render('static', s)).svg, s)", text)
             target.write_text(svg + "\n", encoding="utf-8")
             print("wrote", target.relative_to(charts.ROOT))
         browser.close()

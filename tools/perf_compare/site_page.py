@@ -60,7 +60,7 @@ STYLE = """
 .bench-rows legend { font-weight: 600; padding: 0 6px; }
 .bench-rows label { display: block; margin: 6px 0; line-height: 1.35; }
 .bench-rows label.off { color: var(--muted); }
-.bench-legend, .bench-caption { color: var(--muted); font-size: 0.9rem; margin: 10px 0 0; }
+.bench-legend, .bench-direction, .bench-caption { color: var(--muted); font-size: 0.9rem; margin: 10px 0 0; }
 .bench-legend { color: var(--ink); font-size: 1rem; }
 .swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 2px; margin-right: 0.15em; vertical-align: -0.1em; }
 .swatch.avg { background: var(--chart-avg); }
@@ -145,6 +145,7 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
 <div class="bench-grid">
 <div class="bench-media"><figure class="device {FRAMES[name]}">{glass_svg() if "glass" in FRAMES[name] else ""}{screen(chart, FRAMES[name])}</figure>
 <p class="bench-legend">{swatches}</p>
+<p class="bench-direction">{escape(charts.direction_note(spec, built))}</p>
 <p class="bench-caption">{"".join(anchor(text, url) for text, url in charts.caption_parts(built, None, spec["query"].get("details"), spec["query"].get("windows")))}</p></div>
 <fieldset class="bench-rows"{"" if items else " hidden"}>{rows_html}</fieldset>
 </div>

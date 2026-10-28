@@ -138,7 +138,7 @@ function chartSource(spec, built, suite, selected, palette) {
   // The 1% low never exceeds the average, so a low that rounds above it (a capped run) is drawn at the average.
   const lows = shown.map((e) => (e.value.low === null ? 0 : Math.min(e.value.low, e.value.avg)));
   const withLows = known.length > 0;
-  const yMax = chart.y_max ?? niceCeiling(Math.max(...averages, ...known) * 1.08);
+  const yMax = chart.y_max ?? niceCeiling(Math.max(...averages, ...known) * 1.25);
   const head = chart.horizontal ? "xychart-beta horizontal" : "xychart-beta";
   const title = `${SUITE_NAMES[suite]}: ${chart.title_unit || "uncapped fps"}, ${built.box || spec.box || ""}`.replaceAll('"', "'");
   return [headerText(chart, palette), head, `    title "${title}"`,
@@ -248,9 +248,40 @@ function themePalette() {
 // Mermaid's xychart draws its content flush to the edge of its canvas (the last tick label overhangs it). After
 // rendering, this fits the view box to the content plus an even margin on all four sides. `svg` must be in the
 // document so `getBBox` works. (Mermaid 11.12 has no gridline option, so the charts have none.)
-function finishChart(svg, pad = 22) {
+// Prints each category's value after its longest bar, read from the chart's Mermaid text: fps to one decimal, milliseconds to
+// two. Where two series share a category (average and 1% low) one label reads "average / low", so overlapping bars keep both
+// numbers. The text uses the container's color, so it reads in light and dark.
+function labelBars(main, source) {
+  const series = [...source.matchAll(/^\s*bar \[([^\]]*)\]/gm)].map((m) => m[1].split(",").map((v) => parseFloat(v)));
+  const axis = /y-axis "([^"]*)"/.exec(source);
+  const milliseconds = axis && /\bms\b|millisecond/i.test(axis[1]);
+  const text = (value) => value.toFixed(milliseconds ? 2 : 1);
+  const groups = [...main.querySelectorAll("g[class^='bar-plot-']")];
+  if (!series.length || groups.length !== series.length) return;
+  const bars = groups.map((group) => [...group.querySelectorAll("rect")]);
+  const ns = "http://www.w3.org/2000/svg";
+  for (let i = 0; i < series[0].length; i++) {
+    const values = series.map((s) => s[i]).filter((v, k) => v !== undefined && (k === 0 || v > 0));
+    const rects = bars.map((list) => list[i]).filter(Boolean);
+    if (!rects.length || !values.length) continue;
+    const longest = rects.reduce((a, b) => (parseFloat(b.getAttribute("width")) > parseFloat(a.getAttribute("width")) ? b : a));
+    const label = document.createElementNS(ns, "text");
+    label.setAttribute("x", parseFloat(longest.getAttribute("x")) + parseFloat(longest.getAttribute("width")) + 6);
+    label.setAttribute("y", parseFloat(longest.getAttribute("y")) + parseFloat(longest.getAttribute("height")) / 2);
+    label.setAttribute("dominant-baseline", "middle");
+    label.setAttribute("fill", "currentColor");
+    label.setAttribute("font-size", "20");
+    label.setAttribute("font-weight", "600");
+    label.setAttribute("class", "bar-value");
+    label.textContent = values.map(text).join(" / ");
+    groups[0].parentNode.appendChild(label);
+  }
+}
+
+function finishChart(svg, source, pad = 22) {
   const main = svg.querySelector("g.main");
   if (!main) return svg;
+  if (source) labelBars(main, source);
   const background = main.querySelector("rect.background");
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const child of main.children) {
@@ -271,12 +302,12 @@ function finishChart(svg, pad = 22) {
 // For the pre-rendered fallback: mount the SVG text off screen, finish it and give back its markup.
 
 // For the pre-rendered fallback: mount the SVG text off screen, finish it and give back its markup.
-function finishChartSvg(text) {
+function finishChartSvg(text, source) {
   const stage = document.createElement("div");
   stage.style.cssText = "position:absolute;left:-10000px;top:0;width:900px;visibility:hidden";
   stage.innerHTML = text;
   document.body.append(stage);
-  const svg = finishChart(stage.querySelector("svg"));
+  const svg = finishChart(stage.querySelector("svg"), source);
   const markup = svg.outerHTML;
   stage.remove();
   return markup;
@@ -299,7 +330,7 @@ async function drawChart(container, spec, built, suite, selected) {
     let svg;
     try { ({ svg } = await mermaid.render("bench-chart-" + ++renderCount, text, stage)); } finally { stage.remove(); }
     container.innerHTML = svg;
-    finishChart(container.querySelector("svg"));
+    finishChart(container.querySelector("svg"), text);
   } catch (error) {
     container.append(el("pre", {}, text));
   }
