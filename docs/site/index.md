@@ -42,3 +42,9 @@
 {{ features: mac }}
 
 ![Halo on Mac fighting Covenant forces in Two Betrayals](./mac.jpg){device=mac}
+
+## Permissive license
+
+VISR exists to contribute to the Halo community and to let people do cool things with Halo. The license shouldn't get in the way of whatever you want to do.
+
+All VISR code is licensed under Apache-2.0 so you can use it in any project under any license: another port, a mod, a tool, a dedicated server, a GPL or AGPL project, or something closed. There is no obligation to distribute your code just to play with others. And you're safe from any patent claims by VISR's contributors.
