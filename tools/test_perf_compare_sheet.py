@@ -938,3 +938,12 @@ def test_the_co_op_suite_is_named_split_screen_co_op_wherever_a_reader_sees_it()
     assert not re.search(r"(?<![-\w])Co-op(?!\w)", re.sub(r"<script.*?</script>", "", html, flags=re.S))
     assert "Split-screen co-op is drawn flat" in html
     assert "Split-screen co-op" in (ROOT / "docs/benchmarks.md").read_text()
+
+
+def test_the_sticky_suite_bar_is_translucent_with_a_blur_and_keeps_its_full_width_bleed_and_line():
+    css = (ROOT / "docs/site/style.css").read_text()
+    bar = css[css.index(".bench-bar::before"):]
+    assert "backdrop-filter: blur(" in bar and "-webkit-backdrop-filter: blur(" in bar
+    assert re.search(r"color-mix\(in srgb, var\(--bg\) 8[5-9]%, transparent\)", bar)
+    assert "width: 100vw" in bar and "border-bottom: 1px solid var(--line)" in bar
+    assert "display: contents" in css and ".suite-text { order: 2; flex: 1 1 100%" in css

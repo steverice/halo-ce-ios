@@ -236,25 +236,33 @@ section > p > img { display: block; width: 100%; border-radius: 16px; }
 .bench-bar label:has(input:checked) { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
 .bench-bar label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.suite-info { display: none; flex: 1 1 100%; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); flex-wrap: wrap; min-width: 0; }
-.bench-bar:has(input[value="overall"]:checked) .suite-info[data-suite="overall"]{ display: flex; }
-.bench-bar:has(input[value="campaign"]:checked) .suite-info[data-suite="campaign"]{ display: flex; }
-.bench-bar:has(input[value="combat"]:checked) .suite-info[data-suite="combat"]{ display: flex; }
-.bench-bar:has(input[value="cutscenes"]:checked) .suite-info[data-suite="cutscenes"]{ display: flex; }
-.bench-bar:has(input[value="multiplayer"]:checked) .suite-info[data-suite="multiplayer"]{ display: flex; }
-.bench-bar:has(input[value="co-op"]:checked) .suite-info[data-suite="co-op"]{ display: flex; }
-.suite-text { margin: 0; flex: 1 1 22em; max-width: 60ch; font-size: 0.85rem; line-height: 1.45; color: var(--muted); }
-.suite-shots { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
-.suite-shots li { margin: 0; width: 64px; }
-.suite-shots img { display: block; width: 64px; height: 40px; border-radius: 4px; border: 1px solid var(--line); object-fit: cover; background: var(--code-bg); }
-.suite-shots span { display: block; margin-top: 2px; font-size: 0.65rem; line-height: 1.2; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
+/* The selected suite's panel dissolves into the bar: its screenshots join the pills' row at the right, its description takes the row below. */
+.suite-info { display: none; }
+.bench-bar:has(input[value="overall"]:checked) .suite-info[data-suite="overall"] { display: contents; }
+.bench-bar:has(input[value="campaign"]:checked) .suite-info[data-suite="campaign"] { display: contents; }
+.bench-bar:has(input[value="combat"]:checked) .suite-info[data-suite="combat"] { display: contents; }
+.bench-bar:has(input[value="cutscenes"]:checked) .suite-info[data-suite="cutscenes"] { display: contents; }
+.bench-bar:has(input[value="multiplayer"]:checked) .suite-info[data-suite="multiplayer"] { display: contents; }
+.bench-bar:has(input[value="co-op"]:checked) .suite-info[data-suite="co-op"] { display: contents; }
+.suite-text { order: 2; flex: 1 1 100%; margin: 0; font-size: 0.85rem; line-height: 1.4; color: var(--muted); }
+.suite-shots { order: 1; margin: 0 0 0 auto; display: flex; flex-wrap: nowrap; align-items: flex-start; gap: var(--space-2); list-style: none; padding: 0; }
+.suite-shots li { margin: 0; width: 56px; }
+.suite-shots img { display: block; width: 56px; height: 35px; border-radius: 4px; border: 1px solid var(--line); object-fit: cover; background: var(--code-bg); }
+.suite-shots span { display: block; margin-top: 1px; white-space: nowrap; margin-inline: -8px; font-size: 0.6rem; line-height: 1.15; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
 
 @media (min-width: 900px) {
-  .bench-bar { position: sticky; top: 0; z-index: 20;
-    /* Full-width and opaque: the page color spreads past the column on both sides, clipped to the bar's own height. */
-    background: var(--bg); box-shadow: 0 0 0 100vmax var(--bg), 0 1px 0 100vmax var(--line); clip-path: inset(0 -100vmax -1px); }
+  .bench-bar { position: sticky; top: 0; z-index: 20; isolation: isolate; padding: var(--space-2) 0; row-gap: 4px; }
+  /* The page color at about 88% opacity with a blur, spread past the column on both sides, so content scrolls faintly behind
+     the bar; the bottom line runs the same width. */
+  .bench-bar::before { content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: calc(50% - 50vw); width: 100vw;
+    background: var(--bg); border-bottom: 1px solid var(--line);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  @supports (background: color-mix(in srgb, red 50%, transparent)) {
+    .bench-bar::before { background: color-mix(in srgb, var(--bg) 88%, transparent); }
+  }
+  body { overflow-x: clip; }
 }
-@media (max-width: 599px) { .bench-bar legend { float: none; width: 100%; line-height: 1.4; } .suite-shots li, .suite-shots img { width: 56px; } .suite-shots img { height: 35px; } }
+@media (max-width: 599px) { .bench-bar legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .bench-bar { padding-top: 0; margin-top: var(--space-4); } .suite-shots { margin-left: 0; order: 2; flex-wrap: wrap; flex: 1 1 100%; } .suite-text { order: 1; } .suite-shots li, .suite-shots img { width: 52px; } .suite-shots img { height: 32px; } .suite-shots span { white-space: normal; margin-inline: 0; } }
 
 .bench { margin: 0 0 24px; padding-top: 36px; margin-top: 36px; }
 .bench > h2 { font-size: 1.5rem; margin-bottom: 8px; }
@@ -332,7 +340,7 @@ section > p > img { display: block; width: 100%; border-radius: 16px; }
 }
 
 /* The suite bar is sticky from 900px up, so jump targets keep clear of it. */
-@media (min-width: 900px) { h2[id], .bench, .bench-media { scroll-margin-top: 150px; } }
+@media (min-width: 900px) { h2[id], .bench, .bench-media { scroll-margin-top: 130px; } }
 
 .method { max-width: 760px; margin-inline: auto; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); }
 .method h2 { font-size: 1.5rem; }
