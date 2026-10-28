@@ -31,6 +31,10 @@ dynamic_resolution_floor = 1080
 frame_rate = "60"
 dynamic_resolution_floor = 540
 
+[external.display]
+output_height = 1440
+render_height = 1440
+
 [network]
 player_capacity = 32
 
@@ -78,6 +82,16 @@ source = "profiles/README.md, Dynamic resolution in both workloads; VISR present
 basis = "assumed"
 why = "Blood Gulch with 32 players on the 17 Pro at native needed only 1117 lines to remove every late frame, but heavier maps and 64 players need the wider window the variable workload allows."
 source = "VISR presented benchmark runs on the iPhone 17 Pro, main c6f138a78, 2026-10-26"
+
+[evidence."external.display.output_height"]
+basis = "assumed"
+why = "Estimated from built-in measurements, not measured on a wired display. A 2560x1600 monitor at 1440 lines draws 2304x1440 (3.3 million pixels), about 1.1 times the 3.0 million of this class's measured native 2556x1179, which held 60 frames a second (99.7 to 100% on time, thermal nominal) on the iPhone 15 Pro. Presentation p90 at native was already at the 16.7 ms budget, so the iPhone 15 Pro class gets 1440 and not the monitor's full 1600 lines (4.1 million pixels, 1.4 times the measured load). The earlier 1080 cap was a placeholder pending measurements."
+source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, native built-in output, 2026-10-24 UTC; Steve, 2026-10-27"
+
+[evidence."external.display.render_height"]
+basis = "assumed"
+why = "Rendering follows the output cap: the drawable is the monitor's own shape at up to 1440 lines, scaled to the monitor by the layer. Estimated, not measured on a wired display; dynamic resolution (on, floor 1080) is the safety net if a monitor proves heavier than estimated."
+source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, native built-in output, 2026-10-24 UTC; Steve, 2026-10-27"
 
 [evidence."network.player_capacity"]
 basis = "assumed"
