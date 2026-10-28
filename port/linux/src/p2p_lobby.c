@@ -1128,9 +1128,19 @@ int p2p_lobby_games(struct p2p_listing *games, int maximum_count)
 	int index, delta;
 
 	pthread_mutex_lock(&p2p_lock);
+	for (index = 0; index < MAXIMUM_GAMES && count < maximum_count; index++)
+	{
+		if (!lobby.games[index].used)
+			continue;
+		games[count] = lobby.games[index].listing;
+		games[count].failed = (unsigned char)identifier_failed(games[count].identifier);
+		count++;
+	}
+	/* The master's games: one a broker also carries keeps the broker's
+	listing, which is heard live, and shows the master's provenance and region */
 	if (lobby.master_count && elapsed(lobby.master_time, MASTER_EXPIRY))
 		lobby.master_count = 0;
-	for (index = 0; index < lobby.master_count && count < maximum_count; index++)
+	for (index = 0; index < lobby.master_count; index++)
 	{
 		int shown;
 
@@ -1139,24 +1149,14 @@ int p2p_lobby_games(struct p2p_listing *games, int maximum_count)
 		{
 		}
 		if (shown < count)
+		{
+			games[shown].from_master = 1;
+			memcpy(games[shown].region, lobby.master_games[index].region, sizeof(games[shown].region));
+			continue;
+		}
+		if (count >= maximum_count)
 			continue;
 		games[count] = lobby.master_games[index];
-		games[count].failed = (unsigned char)identifier_failed(games[count].identifier);
-		count++;
-	}
-	for (index = 0; index < MAXIMUM_GAMES && count < maximum_count; index++)
-	{
-		int shown;
-
-		if (!lobby.games[index].used)
-			continue;
-		for (shown = 0; shown < count && memcmp(games[shown].key_hash, lobby.games[index].key_hash,
-			P2P_KEY_HASH_SIZE); shown++)
-		{
-		}
-		if (shown < count)
-			continue;
-		games[count] = lobby.games[index].listing;
 		games[count].failed = (unsigned char)identifier_failed(games[count].identifier);
 		count++;
 	}

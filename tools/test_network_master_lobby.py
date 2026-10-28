@@ -68,7 +68,7 @@ int main(void)
     lobby.delta_count = 1; lobby.delta_time = clock_now; lobby.delta_games[0] = row;
     many[0]=row; many[1]=row;
     p2p_lobby_master_games(many,2);
-    assert(p2p_lobby_games(rows,514) == 1 && rows[0].from_master && strcmp(rows[0].name,"Broker"));
+    assert(p2p_lobby_games(rows,514) == 1 && rows[0].from_master && !strcmp(rows[0].name,"Broker"));
     clock_now += 299999;
     assert(p2p_lobby_games(rows,514) == 1 && rows[0].from_master);
     p2p_lobby_master_games(&row,1); /* a 304 revalidation refreshes the lifetime */
