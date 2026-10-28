@@ -145,6 +145,12 @@ int main(void)
         atomic_store(&audio_bindings[0]->last_callback_ns,now-10*SDL_NS_PER_SECOND);
         assert(host_sdl_resume_audio_stream_device(handle));
         assert(!host_sdl_audio_stalled(SDL_GetTicksNS()));
+        /* the end of a system interruption starts every stream's clock again */
+        SDL_PauseAudioStreamDevice(handle_get(handle,_handle_audio));
+        atomic_store(&audio_bindings[0]->last_callback_ns,SDL_GetTicksNS()-10*SDL_NS_PER_SECOND);
+        SDL_ResumeAudioStreamDevice(handle_get(handle,_handle_audio));
+        host_sdl_audio_touch();
+        assert(!host_sdl_audio_stalled(SDL_GetTicksNS()));
     }
     alarm(0);
     printf("PASS: %u SDL callbacks, %u exact PCM samples; no cross-thread stream deadlock\n", callbacks, consumed);

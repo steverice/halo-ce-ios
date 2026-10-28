@@ -14,6 +14,7 @@
 #include "host_external_splash.h"
 #include "renderer_build.h"
 #include "host_audio_route.h"
+#include "host_audio_stall.h"
 #include "host_config.h"
 #include "host_profile.h"
 
@@ -77,6 +78,9 @@ static int accessory_available_logged=-1;
 static struct host_external_refresh accessory_refresh;
 static struct host_audio_route audio_route;
 static _Atomic int audio_recover;
+/* a system interruption (a call, Siri, an alarm) is under way: the system has stopped the sound on purpose, so the
+   stall check and debug.audio_reopen_test leave it alone until it ends */
+static _Atomic int audio_interrupted;
 static UILabel *playing_label;
 static IMP original_configuration[2];
 static Class configuration_class[2];
@@ -145,6 +149,17 @@ static NSString *audio_route_text(void) {
     for(AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
         [ports addObject:[NSString stringWithFormat:@"%@:%@:%@",port.portType,port.UID,port.portName]];
     return [ports componentsJoinedByString:@", "];
+}
+/* an output that carries a display or a car as well as sound: a route change to or from one reopens the sound
+   device (host_audio_route.h) */
+static int audio_route_external(void) {
+    for (AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
+        if ([port.portType isEqualToString:AVAudioSessionPortHDMI] ||
+            [port.portType isEqualToString:AVAudioSessionPortAirPlay] ||
+            [port.portType isEqualToString:AVAudioSessionPortUSBAudio] ||
+            [port.portType isEqualToString:AVAudioSessionPortDisplayPort] ||
+            [port.portType isEqualToString:AVAudioSessionPortCarAudio]) return 1;
+    return 0;
 }
 /* an output that carries video as well as sound (HDMI, AirPlay): a display the system may hand a scene */
 static int audio_route_has_video(void) {
@@ -309,10 +324,16 @@ void host_external_install(void) {
         }];
     [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionInterruptionNotification object:nil queue:nil
         usingBlock:^(NSNotification *note){
-            if([note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue]==AVAudioSessionInterruptionTypeEnded) {
+            NSUInteger type=[note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
+            if(type==AVAudioSessionInterruptionTypeBegan)atomic_store(&audio_interrupted,1);
+            else if(type==AVAudioSessionInterruptionTypeEnded) {
+                atomic_store(&audio_interrupted,0);
                 atomic_store(&audio_recover,1);atomic_store(&audio_changed,1);
             }
         }];
+    /* an interruption's end is not always sent (the app was suspended during it): becoming active ends it too */
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil
+        usingBlock:^(NSNotification *note){(void)note;atomic_store(&audio_interrupted,0);}];
     [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionMediaServicesWereResetNotification object:nil queue:nil
         usingBlock:^(NSNotification *note){
             (void)note;atomic_store(&audio_recover,1);atomic_store(&audio_changed,1);
@@ -345,7 +366,8 @@ void host_external_attach(void *window_pointer,int metal) {
     host_external_install();
     atomic_store(&audio_changed,1);
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
-    host_audio_route_update(&audio_route,audio_route_text().UTF8String,AVAudioSession.sharedInstance.sampleRate,0);
+    host_audio_route_update(&audio_route,audio_route_text().UTF8String,AVAudioSession.sharedInstance.sampleRate,
+        (int)AVAudioSession.sharedInstance.outputNumberOfChannels,audio_route_external(),0);
 #endif
     const char *forced=getenv("HALO_EXTERNAL_MODE");
     char config[512];
@@ -527,8 +549,9 @@ void host_external_poll(void) {
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
         AVAudioSession *audio=AVAudioSession.sharedInstance;
         int recover=atomic_exchange(&audio_recover,0);
-        if(host_audio_route_update(&audio_route,audio_route_text().UTF8String,audio.sampleRate,recover))
-            audio_reopen(recover?"the system's audio came back":"the route changed");
+        if(host_audio_route_update(&audio_route,audio_route_text().UTF8String,audio.sampleRate,
+            (int)audio.outputNumberOfChannels,audio_route_external(),recover))
+            audio_reopen(recover?"the system's audio came back":"the route changed to or from an external output, or its format changed");
         host_logf(HOST_LOG_INFO,"audio route: category=%s mode=%s output=%s rate=%.0f Hz latency=%.3f s",
             audio.category.UTF8String,audio.mode.UTF8String,audio_route_text().UTF8String,
             audio.sampleRate,audio.outputLatency);
@@ -543,15 +566,21 @@ void host_external_poll(void) {
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
     /* A stream that should be playing (not paused by the game or the background) whose device has stopped asking
        for sound: no callback for 1.5 s, whatever the game's sound was. A silent game still gets its callbacks, so
-       quiet moments never count. Reopened at once, then after 3, 6 and 12 s and every 30 s while the device stays
-       stopped; the waits start over once callbacks come again. */
+       quiet moments never count, and a system interruption never does (host_audio_stall.h has the schedule). */
     {
-        static unsigned long long stall_checked, stall_reopened, test_reopened, stall_wait;
+        static unsigned long long stall_checked, test_reopened;
+        static struct host_audio_stall stall;
+        static int was_interrupted;
         static double test_every=-1.0;
         unsigned long long now=SDL_GetTicksNS();
+        int interrupted=atomic_load(&audio_interrupted);
+        /* (an interruption over: the 1.5 s starts now, not inside it) */
+        if(was_interrupted && !interrupted)host_sdl_audio_touch();
+        if(interrupted && !was_interrupted)host_logf(HOST_LOG_INFO,"audio route: a system interruption began; the sound waits for its end");
+        was_interrupted=interrupted;
         /* (debug.audio_reopen_test: the reopen a route change makes, on a timer, for a device that cannot be replugged) */
         if(test_every<0.0)test_every=host_config_real("debug.audio_reopen_test",0.0);
-        if(test_every>0.0) {
+        if(test_every>0.0 && !interrupted) {
             if(!test_reopened)test_reopened=now;
             else if(now-test_reopened>=(unsigned long long)(test_every*1e9)) {
                 test_reopened=now;
@@ -560,12 +589,8 @@ void host_external_poll(void) {
         }
         if(now-stall_checked>=250*SDL_NS_PER_MS) {
             stall_checked=now;
-            if(!host_sdl_audio_stalled(now))stall_wait=3*SDL_NS_PER_SECOND;
-            else if(now-stall_reopened>=stall_wait) {
-                stall_reopened=now;
-                stall_wait=stall_wait*2>30*SDL_NS_PER_SECOND?30*SDL_NS_PER_SECOND:stall_wait*2;
+            if(host_audio_stall_due(&stall,now,interrupted,!interrupted && host_sdl_audio_stalled(now)))
                 audio_reopen("the sound device stopped asking for sound for 1.5 s");
-            }
         }
     }
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000

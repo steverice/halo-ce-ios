@@ -33,3 +33,5 @@ int gpu_metal_output(void *layer, void *screen, int width, int height);
 void host_sdl_audio_route_changed(void);
 /* host_sdl.c: a stream that should be playing has had no callback for over 1.5 s (now: SDL_GetTicksNS). */
 int host_sdl_audio_stalled(unsigned long long now);
+/* host_sdl.c: every stream's stall clock starts now. */
+void host_sdl_audio_touch(void);

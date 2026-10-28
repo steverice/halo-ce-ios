@@ -734,6 +734,16 @@ int host_sdl_audio_stalled(Uint64 now)
     return stalled || audio_retry;
 }
 
+/* every stream's stall clock starts now (a system interruption has ended: host_sdl_audio_stalled) */
+void host_sdl_audio_touch(void)
+{
+	size_t index;
+
+	for (index = 0; index < SDL_arraysize(audio_bindings); index++)
+		if (audio_bindings[index])
+			atomic_store(&audio_bindings[index]->last_callback_ns, SDL_GetTicksNS());
+}
+
 void host_sdl_audio_pause(int paused)
 {
 	size_t index;
