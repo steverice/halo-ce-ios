@@ -35,10 +35,10 @@ def test_swaps_become_wall_clock_times_and_intervals_inside_the_window(tmp_path)
 
 def test_mach_ticks_use_the_recorded_timebase(tmp_path):
     base = time.clock_gettime_ns(time.CLOCK_UPTIME_RAW)
-    # 125/3 ticks per nanosecond-equivalent: 3 ns per 125 ticks
-    write_log(tmp_path / 'glft.bin', [base * 125 // 3 + i * 125 * 1000 // 3 for i in range(5)], numer=3, denom=125)
+    # Apple silicon's 125/3 timebase: 24,000 ticks are exactly one millisecond.
+    write_log(tmp_path / 'glft.bin', [base * 3 // 125 + i * 24_000 for i in range(5)], numer=125, denom=3)
     intervals = glft.intervals_ms(glft.read_swaps(tmp_path / 'glft.bin'), 0, float('inf'))
-    assert intervals == pytest.approx([0.001] * 4, rel=0.1)
+    assert intervals == pytest.approx([1.0] * 4, rel=1e-3)
 
 
 def test_viewport_is_read_from_the_description_file(tmp_path):
