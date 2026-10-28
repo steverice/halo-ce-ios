@@ -12,7 +12,7 @@ Campaign suite, newest build of each port.
 
 ### Mac
 
-Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over all of the suite's windows (Campaign: c10 and b30; Combat: a50-hangar, b40-exta and b30-bot; Cutscenes: x70-bridge and cutscene-rescue); a build missing any of them is listed under the chart instead. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame. Halo OG is limited by CPU command submission, not by a frame cap. Chupathingy is an OpenGL app, timed at its frame swap, with no GPU time per frame.
+Measured on an M6 Mac mini with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Bars show average fps; the table lists median and 90th-percentile GPU time per rendered frame.
 
 ```mermaid
 ---
@@ -41,7 +41,7 @@ Not measured: [VISR 0.6.3](https://github.com/steverice/visr/releases/tag/visr-v
 
 ### iPhone and iPad
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it. A build measured in only some of the suite's windows is charted from those windows, and the caption names the windows still to measure.
+Measured on an M1 iPad Pro from runs presented at the display rate. Bars show average fps and 1% low fps (the slowest 1% of frames); the table lists the share of frames that arrive on time, within 5% of the display interval.
 
 ```mermaid
 ---
@@ -71,7 +71,7 @@ Not measured: [HaloPad v0.3.12](https://github.com/chrissotraidis/projectreach/r
 
 ### Apple TV
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the frame cap of the device's profile, 30 fps on the Apple TV HD. Only VISR has Apple TV builds. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it.
+Measured on an Apple TV HD from runs presented at the frame cap of its profile, 30 fps. Bars show average fps and 1% low fps (the slowest 1% of frames); the table lists the share of frames that arrive on time, within 5% of the display interval.
 
 ```mermaid
 ---
@@ -101,7 +101,7 @@ Not measured: [VISR 0.6.3 (Apple TV HD)](https://github.com/steverice/visr/relea
 
 ### Vision Pro
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. Under the chart, each build lists its 95th-percentile frame time and the share of frames that arrive on time (within 5% of the display interval) where the app reports them. VISR replays a recorded route; master-chef runs with no input. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster and reports no frame times.
+Measured on an M2 Vision Pro from runs presented at the display rate. Bars show average fps, drawn beside the 1% low fps where the app reports one; the table lists 95th-percentile frame time and the share of frames on time, within 5% of the display interval, where reported.
 
 ```mermaid
 ---

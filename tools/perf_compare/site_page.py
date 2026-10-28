@@ -26,121 +26,28 @@ TITLE = "VISR performance benchmarks"
 DESCRIPTION = "Frame-rate comparisons of VISR with other Halo: Combat Evolved ports on Apple devices."
 
 
+def site_header() -> str:
+    """The brand and site navigation shared with the home page (tools/site_header.html, filled by build_site.py)."""
+    return Template((ROOT / "tools/site_header.html").read_text(encoding="utf-8")).substitute(
+        home_current="", bench_current=' aria-current="page"').rstrip("\n")
+
+
+def suite_info(name: str, info: dict) -> str:
+    """The selected suite's description and the screenshots of the load each of its windows runs. The Suite bar shows
+    only the panel of the checked suite (CSS), so it needs no script."""
+    shots = "".join(
+        "<li>" + (f'<img src="benchmarks/thumbs/{escape(w["shot"])}.jpg" width="64" height="40" alt="" loading="lazy" decoding="async">'
+                  if w.get("shot") else "") + f'<span>{escape(w["label"])}</span></li>' for w in info.get("windows", []))
+    return (f'<div class="suite-info" data-suite="{name}"><p class="suite-text">{escape(info["description"])}</p>'
+            + (f'<ul class="suite-shots" aria-label="Windows sampled">{shots}</ul>' if shots else "") + "</div>")
+
+
 def head_tags(metadata: dict[str, str]) -> dict[str, str]:
     """The icon and social-card tags shared with the other site pages (tools/site_head_*.html, read by build_site.py)."""
     icons = (ROOT / "tools/site_head_icons.html").read_text(encoding="utf-8").rstrip("\n")
     social = Template((ROOT / "tools/site_head_social.html").read_text(encoding="utf-8")).substitute(
         {key: escape(value, quote=True) for key, value in metadata.items()}).rstrip("\n")
     return {"head_icons": icons, "head_social": social}
-
-
-STYLE = """
-.page { max-width: 1160px; }
-.page > h1 { margin: 12px 0 14px; }
-.page > p { max-width: 70ch; color: var(--muted); font-size: 0.95rem; line-height: 1.55; margin-bottom: 10px; }
-.page > p:first-of-type { color: var(--ink); }
-.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-
-/* Controls: the suite switch is a row of pills; the radios stay in the tab order behind them. */
-.bench-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; border: 0;
-  padding: 10px 0; margin: 18px 0 8px; position: sticky; top: 0; z-index: 20;
-  /* Full-width and opaque: the page color spreads past the column on both sides, clipped to the bar's own height. */
-  background: var(--bg); box-shadow: 0 0 0 100vmax var(--bg), 0 1px 0 100vmax var(--line); clip-path: inset(0 -100vmax -1px); }
-.bench-bar legend { float: left; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0; margin-right: 10px; line-height: 2.2; }
-.bench-bar label { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line);
-  border-radius: 999px; font-size: 0.9rem; cursor: pointer; user-select: none; }
-.bench-bar label:hover { border-color: var(--accent); }
-.bench-bar input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-.bench-bar label:has(input:checked) { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
-.bench-bar label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 600px) { .bench-bar { position: static; } .bench-bar legend { float: none; width: 100%; line-height: 1.4; } }
-
-.bench { margin: 0 0 24px; padding-top: 36px; margin-top: 36px; }
-.bench > h2 { font-size: 1.5rem; margin-bottom: 8px; }
-.bench > p { max-width: 75ch; color: var(--muted); font-size: 0.95rem; line-height: 1.55; }
-.bench-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px 32px; align-items: start; margin-top: 18px; }
-@media (min-width: 900px) { .bench-grid { grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); } }
-/* The device frames come from style.css; only the screen's content box is defined here. */
-.bench-media { min-width: 0; }
-.device .bench-chart { display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden;
-  background: #fff; color: #111; border-radius: 18px; }
-.device-iphone .bench-chart { aspect-ratio: 19.5 / 9; border-radius: 24px; }
-.device-ipad .bench-chart { aspect-ratio: 4 / 3; border-radius: 12px; }
-.device-tv .bench-chart { aspect-ratio: 16 / 9; border-radius: 3px; }
-.device-vision .bench-chart { aspect-ratio: 16 / 9; border-radius: 14px; }
-.device-mac .bench-chart { aspect-ratio: 16 / 10; border-radius: 5px; }
-.device-vision.device-glass .bench-chart { position: absolute; inset: 0; aspect-ratio: auto; border-radius: 0; box-sizing: border-box; }
-.device-glass .bench-chart { padding: 9.3% 12% 13.4%; }
-.device-glass .bench-chart svg { width: 100%; height: 100%; }
-.device-glass .bench-empty { padding: 4px 10px; text-align: center; font-size: clamp(0.7rem, 2.6vw, 1rem); line-height: 1.3; }
-.bench-chart svg, .bench-chart img { display: block; flex: 0 1 auto; min-width: 0; width: 100%; max-width: 100%; height: auto; }
-.bench-chart:has(img) { background: #fff; }
-@media (prefers-color-scheme: dark) { .device .bench-chart { background: #10232b; color: #e8f6fa; } }
-.bench-empty { color: inherit; margin: 0; padding: 24px 12px; font-size: 0.95rem; }
-.bench-legend, .bench-direction, .bench-caption { margin: 12px 0 0; font-size: 0.85rem; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
-.bench-legend { color: var(--ink); font-size: 0.9rem; }
-.swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 2px; margin: 0 0.2em 0 0.6em; vertical-align: -0.1em; }
-.swatch:first-child { margin-left: 0; }
-.swatch.avg { background: var(--chart-avg); }
-.swatch.low { background: var(--chart-low); }
-
-/* Builds: one row per port, its other versions folded under it. */
-.bench-rows { min-width: 0; margin: 0; padding: 14px 16px 10px; border: 1px solid var(--line); border-radius: 12px; }
-.bench-rows legend { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 6px; }
-.build-group { padding: 8px 0; border-top: 1px solid var(--line); }
-.build-group:first-of-type { border-top: 0; }
-.build { padding: 4px 0; line-height: 1.35; }
-.build-label { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; cursor: pointer; }
-.build-label input { flex: none; align-self: center; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
-.build-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-.build-meta { flex: 1 1 100%; margin-left: 26px; font-size: 0.8rem; font-weight: 400; color: var(--muted); }
-.build.off { color: var(--muted); }
-.build.off .build-label { cursor: default; }
-.build.off .build-name { font-weight: 500; }
-.build.off input { opacity: 0.5; }
-.why { margin: 2px 0 0 26px; font-size: 0.8rem; }
-.why summary.tag { display: inline-block; cursor: pointer; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; line-height: 1.7; color: var(--muted); list-style: none; }
-.why summary.tag::-webkit-details-marker { display: none; }
-.why summary.tag::after { content: " \\25BE"; }
-.why[open] summary.tag::after { content: " \\25B4"; }
-.why summary.tag:hover { border-color: var(--accent); color: var(--ink); }
-.why p { margin: 6px 0 4px; line-height: 1.45; color: var(--muted); }
-.older { margin: 2px 0 0 26px; }
-.older summary { cursor: pointer; font-size: 0.85rem; color: var(--accent); padding: 4px 0; min-height: 28px; }
-.older[open] summary { margin-bottom: 2px; }
-.older .build { padding-left: 0; }
-
-/* Per-build figures under each chart. On a phone each row becomes a small card. */
-.bench-caption { overflow-x: visible; }
-.bench-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; line-height: 1.4; margin-top: 12px; }
-.bench-table caption { text-align: left; color: var(--muted); padding-bottom: 8px; caption-side: top; }
-.bench-table th, .bench-table td { text-align: left; vertical-align: top; padding: 7px 10px 7px 0; border-top: 1px solid var(--line); font-weight: 400; }
-.bench-table thead th { border-top: 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; font-weight: 600; }
-.bench-table tbody th { font-weight: 600; }
-.bench-table td { font-variant-numeric: tabular-nums; color: var(--muted); }
-.bench-table .build-meta { display: block; margin: 0; overflow-wrap: anywhere; }
-.bench-table tbody th { min-width: 9.5em; }
-.bench-table td[data-label="Measured"] { white-space: nowrap; }
-@media (max-width: 599px) {
-  .bench-table, .bench-table tbody, .bench-table tr, .bench-table th, .bench-table td, .bench-table caption { display: block; width: 100%; }
-  .bench-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .bench-table tr { border-top: 1px solid var(--line); padding: 8px 0; }
-  .bench-table th, .bench-table td { border: 0; padding: 1px 0; }
-  .bench-table td:empty { display: none; }
-  .bench-table td::before { content: attr(data-label) ": "; color: var(--ink); font-weight: 600; }
-}
-
-/* The suite bar is sticky, so jump targets keep clear of it. */
-h2[id], .bench, .bench-media { scroll-margin-top: 76px; }
-@media (max-width: 600px) { h2[id], .bench, .bench-media { scroll-margin-top: 12px; } }
-
-.method { max-width: 760px; margin-inline: auto; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); }
-.method h2 { font-size: 1.5rem; }
-.method h3 { font-size: 1.05rem; margin: 28px 0 10px; }
-.method p, .method li { font-size: 0.95rem; line-height: 1.6; }
-.method li { margin-bottom: 10px; }
-.method code { white-space: normal; overflow-wrap: anywhere; }
-"""
 
 
 FRAMES = {"mac": "device-mac", "iphone-ipad": "device-ipad", "apple-tv": "device-tv", "vision-pro": "device-vision device-glass"}
@@ -183,34 +90,40 @@ def anchor(text: str, url: str) -> str:
     return (f'<a href="{escape(url)}" rel="noopener">{escape(text)}</a>' if url else escape(text))
 
 
-def build_item(entry: dict, reasons: dict) -> str:
-    """One build's row. A build with no data for the chart is dimmed and disabled, tagged briefly; the tag opens the full
-    reason in place (a `details` element, so it works by keyboard, by touch and without scripts), and the row's tooltip
-    carries it too. Mirrored by `buildItem` in benchmarks.js."""
+def build_item(entry: dict, reasons: dict, off: dict | None = None, checked: bool = False) -> str:
+    """One build's row. A build the chart does not draw (`off`, from `charts.list_status`) is grayed out and cannot be
+    ticked, tagged briefly; the tag opens the full reason in place (a `details` element, so it works by keyboard, by
+    touch and without scripts), and the row's tooltip carries it too. Mirrored by `buildItem` in benchmarks.js."""
     meta = f"build {entry['build'] or 'unknown'}, {entry['date']}"
     link = anchor(entry["label"], entry.get("url", ""))
     key = escape(charts.entry_key(entry))
-    if entry["value"] is not None:
-        checked = " checked" if entry["default"] else ""
-        return (f'<div class="build"><label class="build-label"><input type="checkbox" value="{key}"{checked}> '
+    if off is None:
+        mark = " checked" if checked else ""
+        return (f'<div class="build"><label class="build-label"><input type="checkbox" value="{key}"{mark}> '
                 f'<span class="build-name">{link}</span> <span class="build-meta">{escape(meta)}</span></label></div>')
-    tag = "not supported" if entry["kind"] == "not_supported" else "not measured here"
-    reason = charts.plain_reason(entry["reason"], reasons)
+    reason = charts.plain_reason(off["reason"], reasons)
     return (f'<div class="build off" title="{escape(reason, quote=True)}"><label class="build-label"><input type="checkbox" value="{key}" disabled> '
             f'<span class="build-name">{link}</span> <span class="build-meta">{escape(meta)}</span></label>'
-            f'<details class="why"><summary class="tag">{tag}</summary><p>{escape(reason)}</p></details></div>')
+            f'<details class="why"><summary class="tag">{off["tag"]}</summary><p>{escape(reason)}</p></details></div>')
 
 
-def builds_list(built: dict, reasons: dict) -> str:
-    """The Builds box: one group per port with its newest version, the port's other versions folded away."""
+def builds_list(built: dict, reasons: dict, selected: set[str] | None = None) -> str:
+    """The Builds box: one group per port with its newest version, the port's other versions folded away. Its ticked,
+    available rows are the builds the chart draws."""
+    status = charts.list_status(built, selected)
+
+    def item(entry: dict) -> str:
+        key = charts.entry_key(entry)
+        return build_item(entry, reasons, status.get(key), key not in status and (key in selected if selected is not None else entry["default"]))
+
     parts = ["<legend>Builds</legend>"]
     for group in charts.build_groups(built):
-        parts.append('<div class="build-group">' + build_item(group["primary"], reasons))
+        parts.append('<div class="build-group">' + item(group["primary"]))
         if group["others"]:
             count = len(group["others"])
-            opened = " open" if any(e["default"] for e in group["others"]) else ""
+            opened = " open" if any(e["default"] and charts.entry_key(e) not in status for e in group["others"]) else ""
             parts.append(f'<details class="older" data-port="{escape(group["port"])}"{opened}><summary>{count} other version{"" if count == 1 else "s"}</summary>'
-                         + "".join(build_item(e, reasons) for e in group["others"]) + "</details>")
+                         + "".join(item(e) for e in group["others"]) + "</details>")
         parts.append("</div>")
     return "".join(parts)
 
@@ -262,11 +175,13 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
 def render_site_page(summary: dict, rows: list[dict], specs: list[dict], legal_html: str) -> str:
     md = MarkdownIt("commonmark", {"html": False})
     reasons = charts.load_reasons()
+    info = charts.load_suite_info()
     suites = "".join(
         f'<label><input type="radio" name="suite" value="{name}"{" checked" if name == charts.DEFAULT_SUITE else ""}> '
         f"{charts.SUITE_NAMES[name]}</label>" for name in charts.SUITE_CHOICES)
     intro = md.render(f"{CAVEAT}\n\nLast measured: {last_measured(summary, rows)}. The "
                       f"[results spreadsheet]({SHEET_URL}) holds every number. The methodology is at the bottom of this page.")
+    panels = "".join(suite_info(name, info[name]) for name in charts.SUITE_CHOICES)
     method = md.render("\n".join(methodology(summary, rows)))
     body = "\n".join(section(spec, rows, charts.DEFAULT_SUITE, reasons) for spec in specs)
     head = head_tags({"description": DESCRIPTION, "og_title": TITLE, "path": "benchmarks.html"})
@@ -281,13 +196,13 @@ def render_site_page(summary: dict, rows: list[dict], specs: list[dict], legal_h
 {head["head_icons"]}
 <link rel="stylesheet" href="style.css">
 {head["head_social"]}
-<style>{STYLE}</style>
 </head>
 <body>
-<main class="page" id="bench-root" data-csv="benchmarks/results.csv">
+{site_header()}
+<main class="page page-bench" id="bench-root" data-csv="benchmarks/results.csv">
 <h1>Performance benchmarks</h1>
 {intro.rstrip()}
-<fieldset class="bench-bar"><legend>Suite</legend>{suites}</fieldset>
+<fieldset class="bench-bar"><legend>Suite</legend><div class="suite-pills">{suites}</div>{panels}</fieldset>
 {body}
 <div class="method">
 {method.replace("<h2>Methodology</h2>", "<h2>Methodology</h2>", 1).rstrip()}

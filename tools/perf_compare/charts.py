@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT = ROOT / "docs/benchmarks/results.csv"
 SPECS = ROOT / "docs/benchmarks/charts"
 REASONS = ROOT / "docs/benchmarks/reasons.toml"
+SUITE_INFO = ROOT / "docs/benchmarks/suites.toml"
 PAGE = ROOT / "docs/benchmarks.md"
 BEGIN = "<!-- BEGIN CHARTS -->"
 END = "<!-- END CHARTS -->"
@@ -45,6 +46,11 @@ def load_specs(directory: Path) -> list[dict]:
 
 
 def load_reasons(path: Path = REASONS) -> dict:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def load_suite_info(path: Path = SUITE_INFO) -> dict:
+    """Each suite's description and the windows (label and screenshot name) it samples, for the page's suite bar."""
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
@@ -158,7 +164,8 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
         base = {"port": port, "port_name": group[0]["port_name"], "version": version, "build": build,
                 "label": group[0]["label"], "date": max(row["date"] for row in group),
                 "url": next((row.get("release_url", "") for row in group if row.get("release_url", "")), ""),
-                "gpu_note": query.get("no_gpu_notes", {}).get(port, "")}
+                "gpu_note": query.get("no_gpu_notes", {}).get(port, ""),
+                "port_note": query.get("build_notes", {}).get(port, "")}
         if suite == "overall":
             # Which suites count is decided per chart, from the builds drawn (see `_drawn`); here each build keeps
             # its own suite values. A build with none is listed with the first suite's reason.
@@ -258,6 +265,29 @@ def overall_note(built: dict, selected: set[str] | None = None) -> str:
         gaps = [SUITE_NAMES[name] for name in suites if not e["suites"].get(name)]
         note += f" {e['label']} is not in Overall: {_names(gaps)} not measured completely."
     return note
+
+
+def list_status(built: dict, selected: set[str] | None = None) -> dict[str, dict]:
+    """Why each build that the chart does not draw is unavailable, by entry key: {"kind", "tag", "reason"}. A build
+    with no data for the suite carries its own reason. For Overall, a build that has data but lacks a suite the other
+    builds cover is unavailable too, and so is an unticked build that ticking would leave out. Every other build is
+    available, and the available ticked builds are exactly the ones drawn. Mirrored by `listStatus` in benchmarks.js."""
+    status = {}
+    pool = _pool(built, selected)
+    keys = {entry_key(e) for e in pool}
+    for entry in built["entries"]:
+        key = entry_key(entry)
+        if entry["value"] is None:
+            tag = "not supported" if entry["kind"] == "not_supported" else "not measured here"
+            status[key] = {"kind": entry["kind"], "tag": tag, "reason": entry["reason"]}
+        elif built.get("overall"):
+            trial = pool if key in keys else [*pool, entry]
+            suites, kept, _ = overall_split(trial)
+            if entry not in kept:
+                gaps = _names([SUITE_NAMES[name] for name in suites if not entry["suites"].get(name)])
+                status[key] = {"kind": "not_in_overall", "tag": "not in Overall",
+                               "reason": f"Overall needs every suite: missing {gaps}"}
+    return status
 
 
 def chart_title(spec: dict, built: dict, suite: str) -> str:
@@ -409,7 +439,7 @@ def caption_table(built: dict, selected: set[str] | None = None, columns: list[s
         cells, note = _detail_cells(e, columns)
         gaps = _missing_windows(e, windows).removeprefix("; ")
         rows.append({"label": e["label"], "url": e.get("url", ""), "build": e["build"] or "unknown", "measured": e["date"],
-                     "cells": cells, "notes": "; ".join(part for part in (note, gaps) if part)})
+                     "cells": cells, "notes": "; ".join(part for part in (e.get("port_note", ""), note, gaps) if part)})
     return {"box": built["box"], "note": overall_note(built, selected), "headings": [DETAIL_HEADINGS[c] for c in columns], "rows": rows}
 
 

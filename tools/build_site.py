@@ -191,6 +191,16 @@ def head_tags(metadata: dict[str, str]) -> dict[str, str]:
     return {"head_icons": icons, "head_social": social}
 
 
+CURRENT = ' aria-current="page"'
+
+
+def site_header(page: str) -> str:
+    """The brand and site navigation every page shares (tools/site_header.html); `page` is "home" or "benchmarks", the
+    link that gets aria-current. The benchmarks page generator reads the same file."""
+    return Template((ROOT / "tools/site_header.html").read_text(encoding="utf-8")).substitute(
+        home_current=CURRENT if page == "home" else "", bench_current=CURRENT if page == "benchmarks" else "").rstrip("\n")
+
+
 def render_site(source: str, template: str | None = None, *, asset_root: Path | None = None) -> str:
     facts = load_facts()
     metadata, source = front_matter(source)
@@ -323,6 +333,7 @@ def render_site(source: str, template: str | None = None, *, asset_root: Path | 
         template = (ROOT / "tools/site_template.html").read_text(encoding="utf-8")
     return Template(template).substitute(
         **head_tags(metadata),
+        site_header=site_header("home"),
         **{key: escape(value, quote=True) for key, value in metadata.items()},
         content="\n".join(output).replace(f"<p>{EVERY_DEVICE_MARKER}</p>", every_device_columns(facts)),
         legal=md.render(facts["shared"]["legal"]).rstrip(),

@@ -1,0 +1,42 @@
+# What each suite runs, shown beside the suite switch on the benchmarks page. `windows` lists the stretches of play the
+# suite samples, each with the screenshot (docs/site/benchmarks/thumbs/<shot>.jpg) of its load. Window keys are defined in
+# tools/perf_compare/windows.toml.
+
+[overall]
+description = "The geometric mean of the suites that every drawn build has measured. Each suite counts equally."
+
+[campaign]
+description = "The opening of two single-player levels, sampled for 60 seconds after a 15-second warm-up, with no input."
+windows = [
+  { label = "c10" },
+  { label = "b30", shot = "b30" },
+]
+
+[combat]
+description = "Scripted battles in a50 and b40, and a scripted bot player in b30."
+windows = [
+  { label = "a50 hangar" },
+  { label = "b40 exterior" },
+  { label = "b30 bot" },
+]
+
+[cutscenes]
+description = "Two whole in-engine cutscenes, sampled from start to finish."
+windows = [
+  { label = "x70 bridge" },
+  { label = "a50 rescue" },
+]
+
+[multiplayer]
+description = "A hosted Slayer match on each of two maps, played by a scripted bot."
+windows = [
+  { label = "Chill Out", shot = "chillout" },
+  { label = "Blood Gulch", shot = "bloodgulch" },
+]
+
+[co-op]
+description = "Two-player split-screen campaign co-op with enemies at 1x."
+windows = [
+  { label = "c10", shot = "coop-c10" },
+  { label = "b30", shot = "coop-b30" },
+]

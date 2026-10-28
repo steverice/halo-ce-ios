@@ -1,6 +1,6 @@
 order = 20
 heading = "iPhone and iPad"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it. A build measured in only some of the suite's windows is charted from those windows, and the caption names the windows still to measure."
+paragraph = "Measured on an M1 iPad Pro from runs presented at the display rate. Bars show average fps and 1% low fps (the slowest 1% of frames); the table lists the share of frames that arrive on time, within 5% of the display interval."
 empty = "No iPhone or iPad results yet."
 box = "M1 iPad Pro"
 series_labels = ["Average fps", "1% low fps"]

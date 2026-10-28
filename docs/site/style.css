@@ -14,6 +14,11 @@
   --visr-gold: #ffc24d;
   --chart-avg: #1593bd;
   --chart-low: #c8870a;
+  /* Spacing, radius and type scale shared by every page. */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 40px;
+  --radius-sm: 8px; --radius-md: 12px; --radius-pill: 999px;
+  --text-sm: 0.85rem; --text-base: 1rem; --text-lg: 1.1rem;
+  --measure: 70ch; --page-width: 1160px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,8 +46,20 @@ body {
   font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 }
 
-.page { max-width: 680px; margin: 0 auto; padding: 48px 16px 40px; }
-@media (min-width: 720px) { .page { padding: 80px 24px 56px; } }
+.page { max-width: 680px; margin: 0 auto; padding: var(--space-5) var(--space-4) var(--space-6); }
+@media (min-width: 720px) { .page { padding: var(--space-6) var(--space-5) 56px; } }
+
+/* The brand and navigation at the top of every page. */
+.site-header { max-width: var(--page-width); margin: 0 auto; padding: var(--space-3) var(--space-4) 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-4); }
+@media (min-width: 720px) { .site-header { padding-inline: var(--space-5); } }
+.site-brand { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; color: var(--ink); text-decoration: none; font: normal 1.15rem/1 var(--brand-font), sans-serif; letter-spacing: 0.06em; }
+.site-brand img { width: 28px; height: 28px; border-radius: 22%; }
+.site-nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.site-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-3); color: var(--muted); font-size: 0.95rem; text-decoration: none; box-shadow: inset 0 -2px 0 transparent; }
+.site-nav a:hover { color: var(--ink); }
+.site-nav a[aria-current="page"] { color: var(--ink); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+.site-nav a:last-child { min-height: 36px; border: 1px solid var(--accent); border-radius: var(--radius-pill); color: var(--accent); }
+.site-nav a:last-child:hover { background: var(--accent); color: var(--bg); }
 
 @font-face {
   font-family: "Orbitron";
@@ -199,3 +216,127 @@ section > p > img { display: block; width: 100%; border-radius: 16px; }
   section { padding-top: 44px; margin-top: 60px; }
   section > h2 { margin-bottom: 24px; }
 }
+
+/* ---- Benchmarks page ---- */
+.page-bench > h1 { margin: 12px 0 14px; }
+.page-bench > p { max-width: 70ch; color: var(--muted); font-size: 0.95rem; line-height: 1.55; margin-bottom: 10px; }
+.page-bench > p:first-of-type { color: var(--ink); }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Controls: the suite switch is a row of pills (the radios stay in the tab order behind them), with the selected suite's
+   description and window screenshots beside or under it. The bar sticks to the top only where there is room for it. */
+.bench-bar { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; min-width: 0; border: 0;
+  padding: var(--space-3) 0; margin: var(--space-5) 0 var(--space-2); }
+.bench-bar legend { float: left; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0; margin-right: var(--space-3); line-height: 2.2; }
+.suite-pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bench-bar label { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line);
+  border-radius: var(--radius-pill); font-size: 0.9rem; cursor: pointer; user-select: none; }
+.bench-bar label:hover { border-color: var(--accent); }
+.bench-bar input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.bench-bar label:has(input:checked) { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+.bench-bar label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.suite-info { display: none; flex: 1 1 100%; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); flex-wrap: wrap; min-width: 0; }
+.bench-bar:has(input[value="overall"]:checked) .suite-info[data-suite="overall"]{ display: flex; }
+.bench-bar:has(input[value="campaign"]:checked) .suite-info[data-suite="campaign"]{ display: flex; }
+.bench-bar:has(input[value="combat"]:checked) .suite-info[data-suite="combat"]{ display: flex; }
+.bench-bar:has(input[value="cutscenes"]:checked) .suite-info[data-suite="cutscenes"]{ display: flex; }
+.bench-bar:has(input[value="multiplayer"]:checked) .suite-info[data-suite="multiplayer"]{ display: flex; }
+.bench-bar:has(input[value="co-op"]:checked) .suite-info[data-suite="co-op"]{ display: flex; }
+.suite-text { margin: 0; flex: 1 1 22em; max-width: 60ch; font-size: 0.85rem; line-height: 1.45; color: var(--muted); }
+.suite-shots { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.suite-shots li { margin: 0; width: 64px; }
+.suite-shots img { display: block; width: 64px; height: 40px; border-radius: 4px; border: 1px solid var(--line); object-fit: cover; background: var(--code-bg); }
+.suite-shots span { display: block; margin-top: 2px; font-size: 0.65rem; line-height: 1.2; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
+
+@media (min-width: 900px) {
+  .bench-bar { position: sticky; top: 0; z-index: 20;
+    /* Full-width and opaque: the page color spreads past the column on both sides, clipped to the bar's own height. */
+    background: var(--bg); box-shadow: 0 0 0 100vmax var(--bg), 0 1px 0 100vmax var(--line); clip-path: inset(0 -100vmax -1px); }
+}
+@media (max-width: 599px) { .bench-bar legend { float: none; width: 100%; line-height: 1.4; } .suite-shots li, .suite-shots img { width: 56px; } .suite-shots img { height: 35px; } }
+
+.bench { margin: 0 0 24px; padding-top: 36px; margin-top: 36px; }
+.bench > h2 { font-size: 1.5rem; margin-bottom: 8px; }
+.bench > p { max-width: 75ch; color: var(--muted); font-size: 0.95rem; line-height: 1.55; }
+.bench-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px 32px; align-items: start; margin-top: 18px; }
+@media (min-width: 900px) { .bench-grid { grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); } }
+/* The device frames come from style.css; only the screen's content box is defined here. */
+.bench-media { min-width: 0; }
+.device .bench-chart { display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden;
+  background: #fff; color: #111; border-radius: 18px; }
+.device-iphone .bench-chart { aspect-ratio: 19.5 / 9; border-radius: 24px; }
+.device-ipad .bench-chart { aspect-ratio: 4 / 3; border-radius: 12px; }
+.device-tv .bench-chart { aspect-ratio: 16 / 9; border-radius: 3px; }
+.device-vision .bench-chart { aspect-ratio: 16 / 9; border-radius: 14px; }
+.device-mac .bench-chart { aspect-ratio: 16 / 10; border-radius: 5px; }
+.device-vision.device-glass .bench-chart { position: absolute; inset: 0; aspect-ratio: auto; border-radius: 0; box-sizing: border-box; }
+.device-glass .bench-chart { padding: 9.3% 12% 13.4%; }
+.device-glass .bench-chart svg { width: 100%; height: 100%; }
+.device-glass .bench-empty { padding: 4px 10px; text-align: center; font-size: clamp(0.7rem, 2.6vw, 1rem); line-height: 1.3; }
+.bench-chart svg, .bench-chart img { display: block; flex: 0 1 auto; min-width: 0; width: 100%; max-width: 100%; height: auto; }
+.bench-chart:has(img) { background: #fff; }
+@media (prefers-color-scheme: dark) { .device .bench-chart { background: #10232b; color: #e8f6fa; } }
+.bench-empty { color: inherit; margin: 0; padding: 24px 12px; font-size: 0.95rem; }
+.bench-legend, .bench-direction, .bench-caption { margin: 12px 0 0; font-size: 0.85rem; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.bench-legend { color: var(--ink); font-size: 0.9rem; }
+.swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 2px; margin: 0 0.2em 0 0.6em; vertical-align: -0.1em; }
+.swatch:first-child { margin-left: 0; }
+.swatch.avg { background: var(--chart-avg); }
+.swatch.low { background: var(--chart-low); }
+
+/* Builds: one row per port, its other versions folded under it. */
+.bench-rows { min-width: 0; margin: 0; padding: 14px 16px 10px; border: 1px solid var(--line); border-radius: 12px; }
+.bench-rows legend { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 6px; }
+.build-group { padding: 8px 0; border-top: 1px solid var(--line); }
+.build-group:first-of-type { border-top: 0; }
+.build { padding: 4px 0; line-height: 1.35; }
+.build-label { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; cursor: pointer; }
+.build-label input { flex: none; align-self: center; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.build-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.build-meta { flex: 1 1 100%; margin-left: 26px; font-size: 0.8rem; font-weight: 400; color: var(--muted); }
+.build.off { color: var(--muted); }
+.build.off .build-label { cursor: default; opacity: 0.5; }
+.build.off .build-name { font-weight: 500; }
+.build.off input { cursor: not-allowed; }
+.why { margin: 2px 0 0 26px; font-size: 0.8rem; }
+.why summary.tag { display: inline-block; cursor: pointer; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; line-height: 1.7; color: var(--muted); list-style: none; }
+.why summary.tag::-webkit-details-marker { display: none; }
+.why summary.tag::after { content: " \25BE"; }
+.why[open] summary.tag::after { content: " \25B4"; }
+.why summary.tag:hover { border-color: var(--accent); color: var(--ink); }
+.why p { margin: 6px 0 4px; line-height: 1.45; color: var(--muted); }
+.older { margin: 2px 0 0 26px; }
+.older summary { cursor: pointer; font-size: 0.85rem; color: var(--accent); padding: 4px 0; min-height: 28px; }
+.older[open] summary { margin-bottom: 2px; }
+.older .build { padding-left: 0; }
+
+/* Per-build figures under each chart. On a phone each row becomes a small card. */
+.bench-caption { overflow-x: visible; }
+.bench-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; line-height: 1.4; margin-top: 12px; }
+.bench-table caption { text-align: left; color: var(--muted); padding-bottom: 8px; caption-side: top; }
+.bench-table th, .bench-table td { text-align: left; vertical-align: top; padding: 7px 10px 7px 0; border-top: 1px solid var(--line); font-weight: 400; }
+.bench-table thead th { border-top: 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; font-weight: 600; }
+.bench-table tbody th { font-weight: 600; }
+.bench-table td { font-variant-numeric: tabular-nums; color: var(--muted); }
+.bench-table .build-meta { display: block; margin: 0; overflow-wrap: anywhere; }
+.bench-table tbody th { min-width: 9.5em; }
+.bench-table td[data-label="Measured"] { white-space: nowrap; }
+@media (max-width: 599px) {
+  .bench-table, .bench-table tbody, .bench-table tr, .bench-table th, .bench-table td, .bench-table caption { display: block; width: 100%; }
+  .bench-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .bench-table tr { border-top: 1px solid var(--line); padding: 8px 0; }
+  .bench-table th, .bench-table td { border: 0; padding: 1px 0; }
+  .bench-table td:empty { display: none; }
+  .bench-table td::before { content: attr(data-label) ": "; color: var(--ink); font-weight: 600; }
+}
+
+/* The suite bar is sticky from 900px up, so jump targets keep clear of it. */
+@media (min-width: 900px) { h2[id], .bench, .bench-media { scroll-margin-top: 150px; } }
+
+.method { max-width: 760px; margin-inline: auto; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); }
+.method h2 { font-size: 1.5rem; }
+.method h3 { font-size: 1.05rem; margin: 28px 0 10px; }
+.method p, .method li { font-size: 0.95rem; line-height: 1.6; }
+.method li { margin-bottom: 10px; }
+.method code { white-space: normal; overflow-wrap: anywhere; }

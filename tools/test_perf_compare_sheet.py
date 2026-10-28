@@ -219,7 +219,7 @@ def test_builds_list_shows_one_row_per_port_dims_unmeasured_builds_and_opens_the
     assert 'type="checkbox" value="visr@0.5.1@7" checked' in html
     assert 'type="checkbox" value="visr@main@5">' in html and "<details" in html
     off = next(e for e in built["entries"] if e["value"] is None)
-    item = site_page.build_item(off, reasons)
+    item = site_page.build_item(off, reasons, charts.list_status(built, None)[charts.entry_key(off)])
     reason = charts.plain_reason(off["reason"], reasons)
     assert 'class="build off"' in item and "disabled" in item and "not measured here" in item
     assert f'title="{reason}"' in item and f"<p>{reason}</p>" in item and '<summary class="tag">' in item
@@ -830,3 +830,102 @@ def test_methodology_describes_combat_and_cutscenes_only_once_they_have_rows():
     assert "2560×1920 drawable" in text and "equivalent workloads, not replays" in text
     assert "Overall:" in text and "every build drawn in it has measured" in text
     assert "TestFlight" not in text
+
+
+def _listed(html):
+    """(checked and enabled keys, disabled keys) from a rendered Builds box."""
+    inputs = re.findall(r'<input type="checkbox" value="([^"]+)"([^>]*)>', html)
+    return ({key for key, attrs in inputs if "checked" in attrs and "disabled" not in attrs},
+            {key for key, attrs in inputs if "disabled" in attrs})
+
+
+def test_the_builds_list_matches_the_chart_for_every_platform_and_suite_in_the_data():
+    rows = charts.load_snapshot(ROOT / "docs/benchmarks/results.csv")
+    reasons = charts.load_reasons()
+    for item in charts.load_specs(ROOT / "docs/benchmarks/charts"):
+        for suite in charts.SUITE_CHOICES:
+            built = charts.model(rows, item["query"], suite)
+            drawn = {charts.entry_key(e) for e in charts._drawn(built, None)}
+            checked, disabled = _listed(site_page.builds_list(built, reasons))
+            assert checked == drawn, (item["name"], suite)
+            assert checked.isdisjoint(disabled)
+            # Ticking every available build keeps the two in step, and so does unticking them all.
+            status = charts.list_status(built, None)
+            available = {charts.entry_key(e) for e in built["entries"] if charts.entry_key(e) not in status and e["value"] is not None}
+            for selected in (available, set()):
+                checked, _ = _listed(site_page.builds_list(built, reasons, selected))
+                assert checked == {charts.entry_key(e) for e in charts._drawn(built, selected)}, (item["name"], suite)
+
+
+def test_a_build_missing_a_suite_is_grayed_out_in_overall_with_the_suites_it_lacks():
+    extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"}]
+    built = charts.model(snapshot_rows(*extra), QUERY, "overall")
+    status = charts.list_status(built, None)
+    assert status["opence-macos@v1.0.2@2"] == {"kind": "not_in_overall", "tag": "not in Overall",
+                                                "reason": "Overall needs every suite: missing Multiplayer"}
+    html = site_page.builds_list(built, charts.load_reasons())
+    assert "Overall needs every suite: missing Multiplayer" in html and "not in Overall" in html
+    checked, disabled = _listed(html)
+    assert "opence-macos@v1.0.2@2" in disabled and "visr@0.5.1@7" in checked
+
+
+def test_port_notes_land_in_the_notes_cell_of_that_ports_builds():
+    rows = snapshot_rows()
+    built = charts.model(rows, {**QUERY, "build_notes": {"visr": "Replays a recorded route."}}, "campaign")
+    table = charts.caption_table(built, None, [])
+    notes = {r["label"]: r["notes"] for r in table["rows"]}
+    assert notes[next(e["label"] for e in built["entries"] if e["port"] == "visr" and e["default"])].startswith("Replays a recorded route.")
+    assert all("recorded route" not in r["notes"] for r in table["rows"] if "VISR" not in r["label"] and "visr" not in r["label"].lower())
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_browser_list_status_matches_python_for_every_platform_and_suite():
+    rows = charts.load_snapshot(ROOT / "docs/benchmarks/results.csv")
+    specs = charts.load_specs(ROOT / "docs/benchmarks/charts")
+    script = """
+const fs = require('fs');
+const m = require(process.argv[1] + '/docs/site/benchmarks/benchmarks.js');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+console.log(JSON.stringify(input.specs.map((spec) => input.suites.map((suite) => {
+  const built = m.model(input.rows, spec.query, suite);
+  return [m.listStatus(built, null), m.captionTable(built, null, spec.query.details, spec.query.windows)];
+}))));
+"""
+    done = subprocess.run(["node", "-e", script, str(ROOT)], capture_output=True, text=True, check=True,
+                          input=json.dumps({"rows": rows, "specs": specs, "suites": list(charts.SUITE_CHOICES)}))
+    expected = [[[charts.list_status(b, None), charts.caption_table(b, None, s["query"].get("details"), s["query"].get("windows"))]
+                 for b in (charts.model(rows, s["query"], suite) for suite in charts.SUITE_CHOICES)] for s in specs]
+    assert json.loads(done.stdout) == json.loads(json.dumps(expected))
+
+
+def test_both_pages_share_the_site_header_stylesheet_and_footer():
+    site = ROOT / "docs/site"
+    home, bench = (site / "index.html").read_text(), (site / "benchmarks.html").read_text()
+    for page, current in ((home, "Home"), (bench, "Benchmarks")):
+        header = re.search(r'<nav class="site-nav".*?</nav>', page, re.S).group(0)
+        assert re.findall(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', header) == [
+            ("./", "Home"), ("benchmarks.html", "Benchmarks"), ("https://forms.gle/bhjDV4XhRWbZjQet8", "Become a tester")]
+        assert re.findall(r'aria-current="page">([^<]+)<', header) == [current]
+        assert '<link rel="stylesheet" href="style.css">' in page and "<style>" not in page
+        assert "TestFlight" not in page and '<footer class="foot">' in page
+    assert re.search(r'<footer class="foot">(.*?)</footer>', home, re.S).group(1).strip() == re.search(r'<footer class="foot">(.*?)</footer>', bench, re.S).group(1).strip()
+
+
+def test_every_suite_describes_itself_and_its_window_screenshots_exist():
+    info = charts.load_suite_info()
+    assert set(info) == set(charts.SUITE_CHOICES)
+    html = (ROOT / "docs/site/benchmarks.html").read_text()
+    for name, item in info.items():
+        assert f'<div class="suite-info" data-suite="{name}">' in html and item["description"]
+        assert (name == "overall") == ("windows" not in item)
+        for window in item.get("windows", []):
+            if "shot" in window:
+                thumb = ROOT / "docs/site/benchmarks/thumbs" / f'{window["shot"]}.jpg'
+                assert thumb.is_file() and thumb.stat().st_size < 12_000, thumb.name
+
+
+def test_platform_text_names_no_port_and_no_suite_windows():
+    for item in charts.load_specs(ROOT / "docs/benchmarks/charts"):
+        text = item["paragraph"]
+        for word in ("Halo OG", "Chupathingy", "OpenGL", "master-chef", "Campaign", "Combat", "Cutscenes", "b30", "c10"):
+            assert word not in text, (item["name"], word)

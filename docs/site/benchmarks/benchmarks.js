@@ -105,7 +105,7 @@ function model(rows, query, suite) {
     const entry = { port: first.port, port_name: first.port_name, version: first.version, build: first.build,
       label: first.label, date: group.map((r) => r.date).reduce((a, b) => (a > b ? a : b)),
       url: (group.find((r) => r.release_url) || {}).release_url || "",
-      gpu_note: (query.no_gpu_notes || {})[first.port] || "" };
+      gpu_note: (query.no_gpu_notes || {})[first.port] || "", port_note: (query.build_notes || {})[first.port] || "" };
     if (suite === "overall") {
       // Which suites count is decided per chart, from the builds drawn (see drawn()); here each build keeps its own suite values.
       const parts = SUITES.map((name) => suiteValue(group, query, name));
@@ -191,6 +191,29 @@ function overallNote(built, selected) {
     note += ` ${e.label} is not in Overall: ${joinNames(suites.filter((name) => !e.suites[name]).map((name) => SUITE_NAMES[name]))} not measured completely.`;
   }
   return note;
+}
+
+// Why each build the chart does not draw is unavailable, by entry key: {kind, tag, reason}. A build with no data for the
+// suite carries its own reason; for Overall, a build that lacks a suite the other builds cover is unavailable too, and so
+// is an unticked build that ticking would leave out. The available ticked builds are exactly the ones drawn.
+// Mirrors list_status in charts.py.
+function listStatus(built, selected) {
+  const status = {};
+  const shown = pool(built, selected);
+  const keys = new Set(shown.map(entryKey));
+  for (const entry of built.entries) {
+    const key = entryKey(entry);
+    if (entry.value === null) {
+      status[key] = { kind: entry.kind, tag: entry.kind === "not_supported" ? "not supported" : "not measured here", reason: entry.reason };
+    } else if (built.overall) {
+      const { suites, kept } = overallSplit(keys.has(key) ? shown : [...shown, entry]);
+      if (!kept.includes(entry)) {
+        const gaps = joinNames(suites.filter((name) => !entry.suites[name]).map((name) => SUITE_NAMES[name]));
+        status[key] = { kind: "not_in_overall", tag: "not in Overall", reason: `Overall needs every suite: missing ${gaps}` };
+      }
+    }
+  }
+  return status;
 }
 
 function headerText(chart, palette) {
@@ -286,7 +309,7 @@ function captionTable(built, selected, columns, windows) {
     });
     const note = columns.length && cells.every((c) => c === "\u2013") ? detailText(e, columns) : "";
     const gaps = missingWindows(e, windows).replace(/^; /, "");
-    return { label: e.label, url: e.url || "", build: e.build || "unknown", measured: e.date, cells, notes: [note, gaps].filter(Boolean).join("; ") };
+    return { label: e.label, url: e.url || "", build: e.build || "unknown", measured: e.date, cells, notes: [e.port_note, note, gaps].filter(Boolean).join("; ") };
   });
   return { box: built.box, note: overallNote(built, selected), headings: columns.map((c) => DETAIL_HEADINGS[c]), rows };
 }
@@ -303,7 +326,7 @@ function plainReason(reason, reasons) {
   return reason;
 }
 
-if (typeof module !== "undefined") module.exports = { captionParts, headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, captionTable, entryKey, buildGroups, SUITES };
+if (typeof module !== "undefined") module.exports = { captionParts, headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, captionTable, entryKey, buildGroups, listStatus, SUITES };
 
 // ---- Page ----
 function readHash() {
@@ -450,23 +473,23 @@ function drawLegend(node, spec, count) {
 
 // One build's row. A build with no data for the chart is dimmed and disabled, tagged briefly, with the full reason in the
 // row's tooltip and for screen readers. Mirrors build_item in site_page.py.
-function buildItem(entry, spec, state) {
+function buildItem(entry, spec, state, off) {
   const key = entryKey(entry);
   const input = el("input", { type: "checkbox", value: key });
   const name = el("span", { class: "build-name" }, entry.url ? el("a", { href: entry.url, rel: "noopener" }, entry.label) : entry.label);
   const meta = el("span", { class: "build-meta" }, `build ${entry.build || "unknown"}, ${entry.date}`);
   const label = el("label", { class: "build-label" }, input, " ", name, " ", meta);
-  if (entry.value === null) {
+  if (off) {
     input.disabled = true;
-    const tag = entry.kind === "not_supported" ? "not supported" : "not measured here";
-    const reason = plainReason(entry.reason, state.reasons);
+    const reason = plainReason(off.reason, state.reasons);
     return el("div", { class: "build off", title: reason }, label,
-      el("details", { class: "why" }, el("summary", { class: "tag" }, tag), el("p", {}, reason)));
+      el("details", { class: "why" }, el("summary", { class: "tag" }, off.tag), el("p", {}, reason)));
   }
   input.checked = state.selected[spec.slug].has(key);
   input.addEventListener("change", () => {
     if (input.checked) state.selected[spec.slug].add(key); else state.selected[spec.slug].delete(key);
-    state.refresh(spec, false);
+    // Overall's suite set follows the ticked builds, so the rows that are drawn can change with a tick.
+    state.refresh(spec, state.models[spec.slug].overall, key);
   });
   return el("div", { class: "build" }, label);
 }
@@ -488,16 +511,17 @@ function drawCaption(node, table) {
 }
 
 function drawList(list, spec, built, state) {
+  const status = listStatus(built, state.selected[spec.slug]);
   list.hidden = !built.entries.length;
   list.replaceChildren(el("legend", {}, "Builds"));
   for (const group of buildGroups(built)) {
-    const box = el("div", { class: "build-group" }, buildItem(group.primary, spec, state));
+    const box = el("div", { class: "build-group" }, buildItem(group.primary, spec, state, status[entryKey(group.primary)]));
     if (group.others.length) {
       const count = group.others.length;
       const id = spec.slug + "/" + group.port;
       const more = el("details", { class: "older", "data-port": group.port },
-        el("summary", {}, `${count} other version${count === 1 ? "" : "s"}`), ...group.others.map((e) => buildItem(e, spec, state)));
-      more.open = state.open.has(id) || group.others.some((e) => state.selected[spec.slug].has(entryKey(e)));
+        el("summary", {}, `${count} other version${count === 1 ? "" : "s"}`), ...group.others.map((e) => buildItem(e, spec, state, status[entryKey(e)])));
+      more.open = state.open.has(id) || group.others.some((e) => !status[entryKey(e)] && state.selected[spec.slug].has(entryKey(e)));
       more.addEventListener("toggle", () => { if (more.open) state.open.add(id); else state.open.delete(id); });
       box.append(more);
     }
@@ -529,10 +553,13 @@ async function start() {
         ? requested.split(",").filter(Boolean) : built.entries.filter((e) => e.default).map(entryKey));
     }
   }
-  async function refresh(spec, rebuildList = true) {
+  async function refresh(spec, rebuildList = true, focusKey = null) {
     const built = state.models[spec.slug], section = sections[spec.slug];
     await drawChart(section.querySelector(".bench-chart"), spec, built, state.suite, state.selected[spec.slug]);
-    if (rebuildList) drawList(section.querySelector(".bench-rows"), spec, built, state);
+    if (rebuildList) {
+      drawList(section.querySelector(".bench-rows"), spec, built, state);
+      if (focusKey) [...section.querySelectorAll(".bench-rows input")].find((i) => i.value === focusKey)?.focus();
+    }
     drawLegend(section.querySelector(".bench-legend"), spec,
       !built.entries.length ? 0 : drawn(built, state.selected[spec.slug]).some((e) => e.value.low !== null) ? 2 : 1);
     drawCaption(section.querySelector(".bench-caption"), captionTable(built, state.selected[spec.slug], spec.query.details, spec.query.windows));

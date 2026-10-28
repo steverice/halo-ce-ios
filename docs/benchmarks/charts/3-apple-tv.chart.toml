@@ -1,6 +1,6 @@
 order = 30
 heading = "Apple TV"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the frame cap of the device's profile, 30 fps on the Apple TV HD. Only VISR has Apple TV builds. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it."
+paragraph = "Measured on an Apple TV HD from runs presented at the frame cap of its profile, 30 fps. Bars show average fps and 1% low fps (the slowest 1% of frames); the table lists the share of frames that arrive on time, within 5% of the display interval."
 empty = "No Apple TV results yet."
 box = "Apple TV HD"
 series_labels = ["Average fps", "1% low fps"]
