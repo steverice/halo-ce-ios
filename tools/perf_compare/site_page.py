@@ -10,6 +10,11 @@ from string import Template
 
 from markdown_it import MarkdownIt
 
+TOOLS = Path(__file__).resolve().parents[1]
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+from build_site import glyph  # the home page's platform icons (docs/site/icons/nav), with its `nav-icon` styles in style.css
+
 try:
     from . import charts
     from .page import CAVEAT, SHEET_URL, last_measured, methodology
@@ -50,6 +55,8 @@ def head_tags(metadata: dict[str, str]) -> dict[str, str]:
     return {"head_icons": icons, "head_social": social}
 
 
+# The icons before each platform heading, the same glyphs the home page puts before its platform sections.
+HEADING_ICONS = {"mac": ["mac"], "iphone-ipad": ["iphone", "ipad"], "apple-tv": ["apple-tv"], "vision-pro": ["vision-pro"]}
 FRAMES = {"mac": "device-mac", "iphone-ipad": "device-ipad", "apple-tv": "device-tv", "vision-pro": "device-vision device-glass"}
 # The Vision Pro nav icon's outline with a shallower nose notch: the notch's rise above the lobes is halved
 # (the icon's `c-1.6 0-2.7-.9-3.5-2.1`, `c-.6-.8-1.8-.8-2.4 0` and `c-.8 1.2-1.9 2.1-3.5 2.1` become
@@ -160,7 +167,7 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
         swatches = "  ".join(f'<span class="swatch {kind}" aria-hidden="true"></span> {escape(label)}'
                              for kind, label in zip(("avg", "low"), spec["series_labels"][:(2 if charts.has_lows(built) else 1)]))
     return f"""<section class="bench" data-platform="{name}" aria-labelledby="h-{name}">
-<h2 id="h-{name}">{escape(spec["heading"])}</h2>
+<h2 id="h-{name}">{"".join(glyph(icon) for icon in HEADING_ICONS[name])}{escape(spec["heading"])}</h2>
 <p>{escape(spec["paragraph"].strip())}</p>
 <div class="bench-grid">
 <div class="bench-media"><figure class="device {FRAMES[name]}">{glass_svg() if "glass" in FRAMES[name] else ""}{screen(chart, FRAMES[name])}</figure>

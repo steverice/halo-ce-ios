@@ -960,3 +960,16 @@ def test_the_suite_label_wraps_with_the_pills_and_the_legend_takes_no_room_so_th
 def test_the_pills_row_reserves_the_height_of_a_screenshot_so_the_suite_bar_never_changes_height():
     css = (ROOT / "docs/site/style.css").read_text()
     assert re.search(r"@media \(min-width: 900px\) \{[^@]*\.suite-pills \{ min-height: 50px; \}", css)
+
+
+def test_benchmark_platform_headings_carry_the_home_pages_icons_hidden_from_screen_readers():
+    site = ROOT / "docs/site"
+    bench, home = (site / "benchmarks.html").read_text(), (site / "index.html").read_text()
+    expected = {"mac": ["mac"], "iphone-ipad": ["iphone", "ipad"], "apple-tv": ["apple-tv"], "vision-pro": ["vision-pro"]}
+    for slug, icons in expected.items():
+        heading = re.search(rf'<h2 id="h-{slug}">(.*?)</h2>', bench, re.S).group(1)
+        glyphs = re.findall(r'<span class="nav-icon">(<svg.*?</svg>)</span>', heading, re.S)
+        assert len(glyphs) == len(icons) and all('aria-hidden="true"' in g for g in glyphs)
+        for icon, markup in zip(icons, glyphs):
+            assert markup == (site / "icons/nav" / f"{icon}.svg").read_text().strip()
+            assert markup in home
