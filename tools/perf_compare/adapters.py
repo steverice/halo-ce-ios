@@ -285,6 +285,7 @@ def _native(target, scenario, out, config):
     environment_port = target['id'] in ENV_CONSOLE_PORTS
     if target['id'] == 'chupathingy':
         text = ('[display]\nfullscreen = false\n[audio]\nenabled = false\n[network]\nonline = false\n[update]\nauto = false\n'
+                '[community_maps]\nauto_download = false\n'
                 '[debug]\ntelnet_console = true\ntelnet_console_port = ' + str(port) + '\n'
                 + (f'test_input = "{window["test_input"]}"\n' if window['kind'] == 'bot' else ''))
     if target['id'] != 'chupathingy':
@@ -427,6 +428,8 @@ def _native(target, scenario, out, config):
         # Halo OG's per-run maps copy is regenerable and several GB: remove it as soon as the run is over.
         if target['id'] == 'halo-og' and (data / 'maps').is_dir() and not (data / 'maps').is_symlink():
             shutil.rmtree(data / 'maps', ignore_errors=True)
+        # Halo OG downloads the community map pack unless told not to; whatever it fetched is regenerable.
+        shutil.rmtree(saves / 'Community Maps', ignore_errors=True)
         # Isolated map decompression caches are regenerated at every fresh launch.
         for cache_root in (data / 'save/z', saves / 'z'):
             for cache in cache_root.glob('cache00?.map'):
