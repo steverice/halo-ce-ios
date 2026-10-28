@@ -1758,7 +1758,7 @@
         "master_list": {
           "type": "boolean",
           "default": true,
-          "description": "Include the official OpenCE master's signed games in the internet browser. Fetch on open or refresh, at most once every five seconds. Listed hosts are contacted only when joining; the browser shows their region.",
+          "description": "Include the official OpenCE master's signed games in the internet browser. Fetch on open, on refresh and each minute while open, at most once every five seconds. Listed hosts are contacted only when joining; the browser shows their region.",
           "x-environment": "HALO_MASTER_LIST",
           "x-environment-style": "value",
           "x-platforms": [

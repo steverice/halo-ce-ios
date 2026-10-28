@@ -1242,8 +1242,9 @@ static const struct config_setting config_settings[] =
 		"three frames before." },
 	{ "debug.master_list", _config_boolean, "true", "HALO_MASTER_LIST", _environment_value, _platform_all,
 		"Include the official OpenCE master's signed games in the internet browser.\n"
-		"Fetch on open or refresh, at most once every five seconds. Listed hosts\n"
-		"are contacted only when joining; the browser shows their region." },
+		"Fetch on open, on refresh and each minute while open, at most once every\n"
+		"five seconds. Listed hosts are contacted only when joining; the browser\n"
+		"shows their region." },
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"

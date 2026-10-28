@@ -74,7 +74,7 @@ int main(void) {
     /* Direct passes avoid timing-sensitive thread sleeps. */
     p2p_master_browse(1); master_pass();
     assert(requests == 1 && handoffs == 1 && !sent_etag[0]);
-    master_pass(); assert(requests == 1); /* no periodic polling */
+    master_pass(); assert(requests == 1); /* no polling inside the minute */
     p2p_master_refresh(); master_pass(); assert(requests == 1);
     clock_now += 4999; master_pass(); assert(requests == 1);
     clock_now++; status = 304; master_pass();
@@ -98,6 +98,11 @@ int main(void) {
     master_pass(); assert(requests == 7);
     clock_now += 5000; master_pass(); assert(requests == 8 && handoffs == before + 1);
     p2p_master_browse(0); clock_now += 5000; p2p_master_refresh(); master_pass(); assert(requests == 8);
+    /* An open browser asks again once a minute, and never while closed. */
+    clock_now += 60000; master_pass(); assert(requests == 8);
+    p2p_master_browse(1); master_pass(); assert(requests == 9);
+    clock_now += 59999; master_pass(); assert(requests == 9);
+    clock_now++; master_pass(); assert(requests == 10);
     puts("PASS: master open, refresh, throttle, cached clock, Retry-After, configuration");
     return 0;
 }

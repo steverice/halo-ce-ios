@@ -17,7 +17,9 @@ The worker owns its cache and request clock; p2p_lock is held only for handoff.
 #include <string.h>
 #include <time.h>
 
-enum { MASTER_MINIMUM = 5000, MASTER_TIMEOUT = 10000 };
+/* milliseconds: an open browser asks again this often, so its rows outlive the
+lobby's five-minute expiry and their counts stay current (one request a minute) */
+enum { MASTER_MINIMUM = 5000, MASTER_PERIOD = 60000, MASTER_TIMEOUT = 10000 };
 
 static struct
 {
@@ -107,6 +109,8 @@ static void master_pass(void)
 	}
 
 	pthread_mutex_lock(&master.lock);
+	if (master.browse && master.asked && (unsigned int)(now - master.asked_time) >= MASTER_PERIOD)
+		master.refresh = 1;
 	if (master.quitting || !master.browse || !master.refresh || !master_allowed() ||
 		(master.asked && (unsigned int)(now - master.asked_time) < MASTER_MINIMUM) ||
 		master.retry_wait)
