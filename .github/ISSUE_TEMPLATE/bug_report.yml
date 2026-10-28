@@ -44,7 +44,8 @@ body:
     id: version
     attributes:
       label: VISR version or commit
-      placeholder: The commit you built from
+      description: The version number, such as 0.6.3, or the commit if you built from source.
+      placeholder: "0.6.3"
     validations:
       required: true
   - type: dropdown
@@ -60,12 +61,12 @@ body:
       label: Renderer
       description: "`display.renderer` in `config.toml`"
       options:
-        - OpenGL ES (default on iPhone and iPad)
-        - Metal
+        - Metal (default)
+        - OpenGL ES
         - Not sure
   - type: textarea
     id: logs
     attributes:
       label: Logs
-      description: Paste or attach `ios-runtime.log` and `debug.txt` from the VISR folder in Files. Check them for anything personal first.
+      description: Paste or attach `ios-runtime.log` and `debug.txt` from VISR's Documents folder (the VISR folder in the Files app on iPhone and iPad). Check them for anything personal first.
       render: text
