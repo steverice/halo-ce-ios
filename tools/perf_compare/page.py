@@ -181,8 +181,9 @@ def suite_section(rows: list[dict]) -> list[str]:
              f"means the suite has not been run for the build. {state('co-op')}",
              "- **Overall:** per build, the geometric mean of the suites' average rates and the geometric mean of their 1% low "
              "rates, each suite weighted equally, so every suite counts the same whatever its frame-rate scale. Each chart "
-             "uses the suites that every build drawn in it has measured, so its bars stay comparable; the caption names "
-             "them. Ticking or unticking a build can change which suites a chart covers.", "",
+             "averages the suites that every build drawn in it has measured, so its bars stay comparable; the caption names "
+             "them. A build that shares fewer than two suites with the others is left out and named in the caption. Ticking or "
+             "unticking a build can change which suites a chart covers.", "",
              *notes,
              "A round is rejected when the outside-process CPU average rises more than half a core above the baseline taken "
              "before the window. Each round allows three attempts. Rejected attempts appear in the spreadsheet with the status "

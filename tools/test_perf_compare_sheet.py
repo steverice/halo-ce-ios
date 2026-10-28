@@ -257,8 +257,8 @@ def overall_entry(rows, port, version, selected=None):
     return built, entry["value"]
 
 
-def test_overall_covers_every_suite_a_drawn_build_has_complete_and_leaves_out_builds_missing_one():
-    # VISR also has Multiplayer; OpenCE-macOS has Campaign only. Overall covers Campaign and Multiplayer and leaves OpenCE out.
+def test_overall_leaves_out_a_build_that_shares_too_few_suites_with_the_rest():
+    # VISR also has Multiplayer; OpenCE-macOS has Campaign only. They share one suite, so OpenCE is left out and VISR keeps both.
     extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"}]
     rows = overall_rows(*extra)
     built = charts.model(rows, QUERY, "overall")
@@ -269,7 +269,7 @@ def test_overall_covers_every_suite_a_drawn_build_has_complete_and_leaves_out_bu
     assert visr["avg"] == pytest.approx(((500 * 600) ** 0.5 * 100) ** 0.5)
     note = charts.overall_note(built)
     assert note.startswith("Overall covers Campaign and Multiplayer.")
-    assert "OpenCE-macOS v1.0.2 is not in Overall: Multiplayer not measured completely." in note
+    assert "OpenCE-macOS v1.0.2 is not in Overall: it shares too few suites with the other builds." in note
 
 
 def test_overall_suite_set_follows_the_ticked_builds():
@@ -285,13 +285,13 @@ def test_overall_suite_set_follows_the_ticked_builds():
     assert charts.source(spec(), built, "overall", set()) is None
 
 
-def test_overall_draws_nothing_when_no_build_has_every_suite_in_the_set():
+def test_overall_draws_one_build_when_two_share_nothing():
     rows = snapshot_rows({**box_record(port="corece", version="0.3.0", build="9", fps=(100.0, 100.0)), "suite": "co-op"})
     built = charts.model(rows, {**QUERY, "port_order": ["visr", "corece"]}, "overall")
     keys = {"visr@0.5.1@7", "corece@0.3.0@9"}
-    assert charts.source(spec(), built, "overall", keys) is None
-    assert charts.caption(built, keys) == ""
-    assert charts.empty_text(spec(), built) == "No build in this chart has every suite Overall covers."
+    assert 'title "Overall' in charts.source(spec(), built, "overall", keys)
+    assert charts.source(spec(), built, "overall", set()) is None
+    assert charts.empty_text(spec(), built) == "No build in this chart has a suite to average."
 
 
 def window_chart_rows(extra_windows=()):
@@ -767,7 +767,7 @@ console.log(JSON.stringify(input.selections.map((keys) => {
     expected = [[charts.source(spec(), built, "overall", None if keys is None else set(keys)),
                  charts.caption(built, None if keys is None else set(keys), [])] for keys in selections]
     assert json.loads(done.stdout) == expected
-    assert "Overall covers Campaign, Combat and Multiplayer. OpenCE-macOS v1.0.2 is not in Overall: Multiplayer not measured completely." in expected[0][1]
+    assert "Overall covers Campaign and Combat." in expected[0][1] and "is not in Overall" not in expected[0][1]
     assert "Overall covers Campaign, Combat and Multiplayer." in expected[1][1]
 
 
@@ -862,9 +862,9 @@ def test_a_build_missing_a_suite_is_grayed_out_in_overall_with_the_suites_it_lac
     built = charts.model(snapshot_rows(*extra), QUERY, "overall")
     status = charts.list_status(built, None)
     assert status["opence-macos@v1.0.2@2"] == {"kind": "not_in_overall", "tag": "not in Overall",
-                                                "reason": "Overall needs every suite: missing Multiplayer"}
+                                                "reason": "Overall averages the suites every drawn build has, and this build shares too few of them with the others."}
     html = site_page.builds_list(built, charts.load_reasons())
-    assert "Overall needs every suite: missing Multiplayer" in html and "not in Overall" in html
+    assert "shares too few of them with the others" in html and "not in Overall" in html
     checked, disabled = _listed(html)
     assert "opence-macos@v1.0.2@2" in disabled and "visr@0.5.1@7" in checked
 
@@ -989,3 +989,74 @@ def test_other_versions_stay_closed_and_the_summary_counts_the_ones_drawn():
     assert re.search(r"<summary>\d+ other versions? \u00b7 \d+ shown</summary>", html)
     script = (ROOT / "docs/site/benchmarks/benchmarks.js").read_text()
     assert "more.open = state.open.has(id);" in script and "shown" in script
+
+
+def _suite_build(name, *suites):
+    found = {suite: {"avg": 100.0, "low": None, "details": {}, "rows": []} for suite in suites}
+    return {"port": name, "label": name, "suites": found}
+
+
+def _split(*builds):
+    suites, kept, left = charts.overall_split(list(builds))
+    return suites, [e["port"] for e in kept], [e["port"] for e in left]
+
+
+ALL5 = ("campaign", "combat", "cutscenes", "multiplayer", "co-op")
+
+
+def test_overall_on_the_mac_drops_the_build_that_shares_nothing_and_averages_campaign_and_combat():
+    visr = _suite_build("visr", "multiplayer", "co-op")
+    opence = _suite_build("opence", "campaign", "combat", "cutscenes", "multiplayer")
+    corece = _suite_build("corece", "campaign", "combat", "cutscenes")
+    chupa = _suite_build("chupa", "campaign", "combat", "cutscenes")
+    og = _suite_build("og", "campaign", "combat")
+    suites, kept, left = _split(visr, opence, corece, chupa, og)
+    assert (suites, kept, left) == (["campaign", "combat"], ["opence", "corece", "chupa", "og"], ["visr"])
+    # Once VISR has Campaign, Combat and Cutscenes, every build shares Campaign and Combat and none is dropped.
+    visr = _suite_build("visr", *ALL5)
+    assert _split(visr, opence, corece, chupa, og) == (["campaign", "combat"], ["visr", "opence", "corece", "chupa", "og"], [])
+    assert _split(visr, opence, corece, chupa) == (["campaign", "combat", "cutscenes"], ["visr", "opence", "corece", "chupa"], [])
+
+
+def test_overall_breaks_ties_by_fewest_suites_then_the_later_build():
+    # Both drops leave one shared suite; the build with fewer suites goes.
+    assert _split(_suite_build("a", "campaign", "combat", "cutscenes"), _suite_build("b", "multiplayer")) == (["campaign", "combat", "cutscenes"], ["a"], ["b"])
+    # Equal suite counts and equal gain: the later build goes.
+    assert _split(_suite_build("a", "campaign"), _suite_build("b", "combat")) == (["campaign"], ["a"], ["b"])
+    # Dropping the build with the fewest suites is not automatic: removing the broader one leaves the larger shared set.
+    big = _suite_build("big", "campaign", "combat")
+    small = _suite_build("small", "multiplayer", "co-op")
+    other = _suite_build("other", "campaign", "combat", "cutscenes")
+    assert _split(big, small, other) == (["campaign", "combat"], ["big", "other"], ["small"])
+
+
+def test_overall_keeps_a_single_build_whole_and_does_not_drop_builds_that_cannot_share_more():
+    assert _split(_suite_build("solo", "campaign", "multiplayer", "co-op")) == (["campaign", "multiplayer", "co-op"], ["solo"], [])
+    assert _split(_suite_build("solo", "campaign")) == (["campaign"], ["solo"], [])
+    # Three builds that all have only Campaign stay together: dropping one adds no suite.
+    assert _split(_suite_build("a", "campaign"), _suite_build("b", "campaign"), _suite_build("c", "campaign")) == (["campaign"], ["a", "b", "c"], [])
+    # Vision Pro: VISR with four suites and a build with only Campaign.
+    assert _split(_suite_build("visr", "campaign", "combat", "cutscenes", "multiplayer"), _suite_build("chef", "campaign")) == (
+        ["campaign", "combat", "cutscenes", "multiplayer"], ["visr"], ["chef"])
+    assert _split() == ([], [], [])
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_browser_overall_split_matches_python_on_the_tie_and_mac_cases():
+    cases = [[("visr", "multiplayer", "co-op"), ("opence", "campaign", "combat", "cutscenes", "multiplayer"), ("corece", "campaign", "combat", "cutscenes"),
+              ("chupa", "campaign", "combat", "cutscenes"), ("og", "campaign", "combat")],
+             [("a", "campaign", "combat", "cutscenes"), ("b", "multiplayer")], [("a", "campaign"), ("b", "combat")],
+             [("big", "campaign", "combat"), ("small", "multiplayer", "co-op"), ("other", "campaign", "combat", "cutscenes")],
+             [("solo", "campaign")], [("a", "campaign"), ("b", "campaign"), ("c", "campaign")]]
+    script = """
+const fs = require('fs');
+const m = require(process.argv[1] + '/docs/site/benchmarks/benchmarks.js');
+const cases = JSON.parse(fs.readFileSync(0, 'utf8'));
+console.log(JSON.stringify(cases.map((c) => {
+  const r = m.overallSplit(c.map(([port, ...suites]) => ({ port, suites: Object.fromEntries(suites.map((s) => [s, {}])) })));
+  return [r.suites, r.kept.map((e) => e.port), r.left.map((e) => e.port)];
+})));
+"""
+    done = subprocess.run(["node", "-e", script, str(ROOT)], capture_output=True, text=True, check=True, input=json.dumps(cases))
+    expected = [list(_split(*[_suite_build(port, *suites) for port, *suites in case])) for case in cases]
+    assert json.loads(done.stdout) == expected

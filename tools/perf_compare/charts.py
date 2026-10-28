@@ -208,17 +208,30 @@ def build_groups(built: dict) -> list[dict]:
     return result
 
 
-def overall_suites(pool: list[dict]) -> list[str]:
-    """The suites Overall covers on a chart: every suite at least one drawn build has complete. A build missing one
-    of them is left out of Overall (see `overall_split`), so one incomplete port does not shrink the set for the rest."""
-    return [name for name in SUITES if any(e["suites"].get(name) for e in pool)]
+OVERALL_MIN_SUITES = 2
+
+
+def _shared_suites(builds: list[dict]) -> list[str]:
+    """The suites every build in the list has complete; a single build has all of its own."""
+    return [name for name in SUITES if builds and all(e["suites"].get(name) for e in builds)]
 
 
 def overall_split(pool: list[dict]) -> tuple[list[str], list[dict], list[dict]]:
-    """(suites, builds drawn, builds left out) for Overall."""
-    suites = overall_suites(pool)
-    kept = [e for e in pool if suites and all(e["suites"].get(name) for name in suites)]
-    return suites, kept, [e for e in pool if e not in kept]
+    """(suites, builds drawn, builds left out) for Overall. Overall covers the suites every drawn build has complete.
+    While those are fewer than two and more than one build is drawn, the build whose removal leaves the most shared
+    suites is dropped (ties: the build with the fewest suites, then the later one), as long as dropping one adds a
+    suite; a lone build counts all of its suites. Mirrored by `overallSplit` in benchmarks.js."""
+    kept = list(pool)
+    shared = _shared_suites(kept)
+    while len(shared) < OVERALL_MIN_SUITES and len(kept) > 1:
+        options = [(len(_shared_suites([e for e in kept if e is not drop])), -sum(1 for n in SUITES if drop["suites"].get(n)), index, drop)
+                   for index, drop in enumerate(kept)]
+        best = max(options, key=lambda option: option[:3])
+        if best[0] <= len(shared):
+            break
+        kept = [e for e in kept if e is not best[3]]
+        shared = _shared_suites(kept)
+    return shared, kept, [e for e in pool if e not in kept]
 
 
 def _overall_value(entry: dict, covered: list[str]) -> dict:
@@ -262,8 +275,7 @@ def overall_note(built: dict, selected: set[str] | None = None) -> str:
         return ""
     note = "Overall covers " + _names([SUITE_NAMES[name] for name in suites]) + "."
     for e in left:
-        gaps = [SUITE_NAMES[name] for name in suites if not e["suites"].get(name)]
-        note += f" {e['label']} is not in Overall: {_names(gaps)} not measured completely."
+        note += f" {e['label']} is not in Overall: it shares too few suites with the other builds."
     return note
 
 
@@ -284,9 +296,8 @@ def list_status(built: dict, selected: set[str] | None = None) -> dict[str, dict
             trial = pool if key in keys else [*pool, entry]
             suites, kept, _ = overall_split(trial)
             if entry not in kept:
-                gaps = _names([SUITE_NAMES[name] for name in suites if not entry["suites"].get(name)])
                 status[key] = {"kind": "not_in_overall", "tag": "not in Overall",
-                               "reason": f"Overall needs every suite: missing {gaps}"}
+                               "reason": "Overall averages the suites every drawn build has, and this build shares too few of them with the others."}
     return status
 
 
@@ -455,7 +466,7 @@ def empty_text(spec: dict, built: dict) -> str:
     if not built["entries"]:
         return spec["empty"].strip()
     if built.get("overall") and any(e["value"] is not None for e in built["entries"]):
-        return "No build in this chart has every suite Overall covers."
+        return "No build in this chart has a suite to average."
     return "No build has data for this suite yet."
 
 

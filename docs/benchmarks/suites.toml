@@ -3,7 +3,7 @@
 # tools/perf_compare/windows.toml.
 
 [overall]
-description = "The geometric mean of the suites that every drawn build has measured. Each suite counts equally."
+description = "The geometric mean of the suites that every drawn build has measured, each counting equally; a build that shares fewer than two with the others is left out."
 
 [campaign]
 description = "The opening of two single-player levels, sampled for 60 seconds after a 15-second warm-up, with no input."

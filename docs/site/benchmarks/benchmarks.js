@@ -151,12 +151,27 @@ function pool(built, selected) {
   return built.entries.filter((e) => e.value !== null && (selected ? selected.has(entryKey(e)) : e.default));
 }
 
-// The suites Overall covers: every suite at least one drawn build has complete. A build missing one of them is left
-// out of Overall, so one incomplete port does not shrink the set for the rest.
+// The suites every build in the list has complete; a single build has all of its own.
+const OVERALL_MIN_SUITES = 2;
+const sharedSuites = (builds) => SUITES.filter((name) => builds.length && builds.every((e) => e.suites[name]));
+
+// Overall covers the suites every drawn build has complete. While those are fewer than two and more than one build is drawn,
+// the build whose removal leaves the most shared suites is dropped (ties: the build with the fewest suites, then the later
+// one), as long as dropping one adds a suite; a lone build counts all of its suites. Mirrors overall_split in charts.py.
 function overallSplit(shown) {
-  const suites = SUITES.filter((name) => shown.some((e) => e.suites[name]));
-  const kept = shown.filter((e) => suites.length && suites.every((name) => e.suites[name]));
-  return { suites, kept, left: shown.filter((e) => !kept.includes(e)) };
+  let kept = [...shown];
+  let shared = sharedSuites(kept);
+  while (shared.length < OVERALL_MIN_SUITES && kept.length > 1) {
+    let best = null;
+    kept.forEach((drop, index) => {
+      const option = [sharedSuites(kept.filter((e) => e !== drop)).length, -SUITES.filter((n) => drop.suites[n]).length, index, drop];
+      if (!best || option[0] > best[0] || (option[0] === best[0] && (option[1] > best[1] || (option[1] === best[1] && option[2] > best[2])))) best = option;
+    });
+    if (best[0] <= shared.length) break;
+    kept = kept.filter((e) => e !== best[3]);
+    shared = sharedSuites(kept);
+  }
+  return { suites: shared, kept, left: shown.filter((e) => !kept.includes(e)) };
 }
 
 function overallValue(entry, covered) {
@@ -188,7 +203,7 @@ function overallNote(built, selected) {
   if (!kept.length) return "";
   let note = "Overall covers " + joinNames(suites.map((name) => SUITE_NAMES[name])) + ".";
   for (const e of left) {
-    note += ` ${e.label} is not in Overall: ${joinNames(suites.filter((name) => !e.suites[name]).map((name) => SUITE_NAMES[name]))} not measured completely.`;
+    note += ` ${e.label} is not in Overall: it shares too few suites with the other builds.`;
   }
   return note;
 }
@@ -208,8 +223,7 @@ function listStatus(built, selected) {
     } else if (built.overall) {
       const { suites, kept } = overallSplit(keys.has(key) ? shown : [...shown, entry]);
       if (!kept.includes(entry)) {
-        const gaps = joinNames(suites.filter((name) => !entry.suites[name]).map((name) => SUITE_NAMES[name]));
-        status[key] = { kind: "not_in_overall", tag: "not in Overall", reason: `Overall needs every suite: missing ${gaps}` };
+        status[key] = { kind: "not_in_overall", tag: "not in Overall", reason: "Overall averages the suites every drawn build has, and this build shares too few of them with the others." };
       }
     }
   }
@@ -326,7 +340,7 @@ function plainReason(reason, reasons) {
   return reason;
 }
 
-if (typeof module !== "undefined") module.exports = { captionParts, headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, captionTable, entryKey, buildGroups, listStatus, SUITES };
+if (typeof module !== "undefined") module.exports = { captionParts, headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, captionTable, entryKey, buildGroups, listStatus, overallSplit, SUITES };
 
 // ---- Page ----
 function readHash() {
@@ -445,7 +459,7 @@ async function drawChart(container, spec, built, suite, selected) {
     const anyData = built.entries.some((e) => e.value !== null);
     const nothingCommon = built.overall && anyData && pool(built, selected).length;
     container.append(el("p", { class: "bench-empty" }, !built.entries.length ? spec.empty
-      : nothingCommon ? "No build in this chart has every suite Overall covers."
+      : nothingCommon ? "No build in this chart has a suite to average."
       : anyData ? "Nothing is ticked." : "No build has data for this suite yet."));
     return;
   }
