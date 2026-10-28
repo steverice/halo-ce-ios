@@ -14,8 +14,12 @@ def table():
 
 def test_shipped_windows_are_valid_and_cover_the_suites():
     t = windows.load()
-    assert {w['suite'] for w in t.values()} == {'campaign', 'combat', 'cutscenes'}
-    assert set(t) == {'c10', 'b30', 'a50-hangar', 'b40-exta', 'b30-bot', 'x70-bridge', 'cutscene-rescue'}
+    assert {w['suite'] for w in t.values()} == {'campaign', 'combat', 'cutscenes', 'multiplayer', 'co-op'}
+    assert set(t) == {'c10', 'b30', 'a50-hangar', 'b40-exta', 'b30-bot', 'x70-bridge', 'cutscene-rescue',
+                      'mp-chillout', 'mp-bloodgulch', 'coop-c10', 'coop-b30'}
+    assert [t[k]['map'] for k in ('mp-chillout', 'mp-bloodgulch')] == ['chillout', 'bloodgulch']
+    assert [t[k]['map'] for k in ('coop-c10', 'coop-b30')] == ['c10', 'b30']
+    assert t['mp-chillout']['players'] == 1 and t['coop-c10']['players'] == 2
     assert t['x70-bridge']['map'] == 'd40' and t['x70-bridge']['expected_ticks'] == 3790
     assert t['cutscene-rescue']['map'] == 'a50' and t['cutscene-rescue']['expected_ticks'] == 3180
     assert t['b30-bot']['ticks'] == 1800
@@ -34,6 +38,13 @@ def test_shipped_windows_are_valid_and_cover_the_suites():
     (lambda w: w['c10'].update(commands=['(x)']), 'unknown keys commands'),
     (lambda w: w['b30-bot'].update(test_input='keyboard'), 'test_input'),
     (lambda w: w['a50-hangar'].update(fingerprints=[3]), 'list of console lines'),
+    (lambda w: w['mp-chillout'].update(map='c10'), 'multiplayer map'),
+    (lambda w: w['mp-chillout'].update(players=2), 'one local player'),
+    (lambda w: w['mp-chillout'].pop('test_input'), 'missing test_input'),
+    (lambda w: w['coop-c10'].update(map='chillout'), 'campaign level'),
+    (lambda w: w['coop-c10'].update(players=1), 'two local players'),
+    (lambda w: w['coop-c10'].update(suite='multiplayer'), 'kind and suite disagree'),
+    (lambda w: w['coop-b30'].update(test_input='bot:1'), 'unknown keys test_input'),
 ])
 def test_validation_rejects(mutate, message):
     t = table()

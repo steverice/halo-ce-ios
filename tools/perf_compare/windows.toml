@@ -106,3 +106,58 @@ kind = "cutscene"
 script = "cutscene_rescue"
 expected_ticks = 3180
 reference_shot = "cutscene-rescue"
+
+# kind = "match":    a hosted Slayer match on a multiplayer map: the host starts the game by itself; `players` local
+#                    players, played by the scripted bot `test_input`. Warm up after player readiness, then sample.
+# kind = "coop":     the campaign level hosted as a local co-op game with `players` split-screen players and no input;
+#                    enemy scaling is set to static 1x where the port has the option.
+
+[mp-chillout]
+suite = "multiplayer"
+map = "chillout"
+kind = "match"
+players = 1
+test_input = "bot:1"
+warmup_s = 15
+sample_s = 60
+fingerprints = [
+  "(list_count (players))",
+  "(game_time)",
+  "(unit_get_health (unit (list_get (players) 0)))",
+]
+reference_shot = "mp-chillout"
+
+[mp-bloodgulch]
+suite = "multiplayer"
+map = "bloodgulch"
+kind = "match"
+players = 1
+test_input = "bot:1"
+warmup_s = 15
+sample_s = 60
+fingerprints = [
+  "(list_count (players))",
+  "(game_time)",
+  "(unit_get_health (unit (list_get (players) 0)))",
+]
+reference_shot = "mp-bloodgulch"
+
+[coop-c10]
+suite = "co-op"
+map = "c10"
+kind = "coop"
+players = 2
+warmup_s = 15
+sample_s = 60
+fingerprints = ["(list_count (players))", "(game_time)"]
+reference_shot = "coop-c10"
+
+[coop-b30]
+suite = "co-op"
+map = "b30"
+kind = "coop"
+players = 2
+warmup_s = 15
+sample_s = 60
+fingerprints = ["(list_count (players))", "(game_time)"]
+reference_shot = "coop-b30"

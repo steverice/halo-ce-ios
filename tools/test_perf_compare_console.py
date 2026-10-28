@@ -147,3 +147,31 @@ def test_opening_is_not_a_console_window():
     game = FakeGame()
     with pytest.raises(ValueError):
         consolewin.run_window(WINDOWS['c10'], game.console, Hooks(game), game)
+
+
+def test_hosted_session_warms_up_samples_and_reads_players_and_time_at_both_ends():
+    window = WINDOWS['mp-chillout']
+    game = FakeGame(lambda line, t: {'(list_count (players))': '1', '(game_time)': str(int(t * 30))}.get(line))
+    hooks = Hooks(game)
+    out = consolewin.run_window(window, game.console, hooks, game)
+    assert [name for name, _ in hooks.log] == ['prepare', 'begin', 'mid', 'end']
+    assert hooks.log[0][1] == 15 and out['seconds'] == pytest.approx(60, abs=0.5)
+    assert out['start']['(list_count (players))'] == '1' and int(out['end']['(game_time)']) > int(out['start']['(game_time)'])
+    assert out['kind'] == 'match'
+
+
+def test_hosted_settings_per_port():
+    import adapters
+    match, coop = WINDOWS['mp-chillout'], WINDOWS['coop-c10']
+    assert adapters.hosted_spec(match) == 'host:chillout'
+    assert adapters.hosted_spec(coop) == 'host:levels\\c10\\c10:coop'
+    debug, network, env = adapters.hosted_settings('visr', coop)
+    assert 'enemy_multiplier = 1' in debug and 'network_test_players = 2' in debug and not network and not env
+    assert not any('test_input' in line for line in debug)  # co-op takes no input
+    debug, network, env = adapters.hosted_settings('opence-macos', coop)
+    assert network == ['coop_enemies_mode = "none"'] and 'enemy_multiplier = 1' not in debug
+    debug, network, env = adapters.hosted_settings('halo-og', match)
+    assert 'test_input = "bot:1"' in debug and not network
+    debug, network, env = adapters.hosted_settings('chupathingy', coop)
+    assert env['HALO_NETWORK_TEST_LOCAL_PLAYERS'] == '2' and env['HALO_NET_COOP_ENEMIES_MODE'] == 'none' and not debug
+    assert adapters.hosted_settings('chupathingy', match)[2]['HALO_START_WITH_ONE_PLAYER'] == '1'

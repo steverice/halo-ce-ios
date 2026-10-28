@@ -117,6 +117,29 @@ def test_bot_window_rejects_drift_inactivity_and_a_missed_start():
         rejects.check(*bot(ended='never-started'))
 
 
+def session(window, players=('1', '1'), ticks=(500, 2300)):
+    reads = lambda count, tick: {'(list_count (players))': count, '(game_time)': None if tick is None else str(tick)}
+    return {'start': reads(players[0], ticks[0]), 'end': reads(players[1], ticks[1]), 'seconds': 60.0}
+
+
+def test_hosted_windows_reject_a_wrong_player_count_and_a_stalled_game():
+    match, coop = W['mp-chillout'], W['coop-c10']
+    assert rejects.check(match, session(match)) == []
+    assert rejects.check(coop, session(coop, ('2', '2'))) == []
+    with pytest.raises(ValueError, match='players-missing'):
+        rejects.check(match, session(match, ('1', '2')))
+    with pytest.raises(ValueError, match='players-missing'):
+        rejects.check(coop, session(coop, ('1', '1')))
+    with pytest.raises(ValueError, match='game-stalled'):
+        rejects.check(match, session(match, ticks=(500, 600)))
+
+
+def test_hosted_windows_on_a_silent_console_are_flagged_not_rejected():
+    match = W['mp-chillout']
+    notes = rejects.check(match, session(match, (None, None), (None, None)))
+    assert any('player count unreadable' in n for n in notes) and any('game time unreadable' in n for n in notes)
+
+
 def test_outlier_rounds_are_flagged_against_the_other_rounds():
     window = W['b40-exta']
     key = window['fingerprints'][0]

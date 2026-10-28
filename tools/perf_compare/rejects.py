@@ -5,7 +5,8 @@ from consolewin import CUTSCENE_GRACE, TICKS_PER_SECOND, number
 
 CUTSCENE_MIN_SHARE = 0.95
 BOT_TICK_TOLERANCE = 2
-CODES = ('cutscene-incomplete', 'nothing-placed', 'player-reverted', 'bot-did-not-start', 'bot-tick-drift', 'bot-inactive')
+CODES = ('cutscene-incomplete', 'nothing-placed', 'player-reverted', 'bot-did-not-start', 'bot-tick-drift', 'bot-inactive',
+         'players-missing', 'game-stalled')
 GRENADES = '(unit_get_total_grenade_count (unit (list_get (players) 0)))'
 
 
@@ -40,6 +41,18 @@ def check(window: dict, outcome: dict) -> list[str]:
         before, after = number(outcome['start'].get(GRENADES)), number(outcome['end'].get(GRENADES))
         if before is not None and after is not None and before == after:
             raise ValueError('bot-inactive')  # the bot never threw a grenade
+    elif kind in ('match', 'coop'):
+        start, end = outcome.get('start', {}), outcome.get('end', {})
+        players = [number(reads.get('(list_count (players))')) for reads in (start, end)]
+        if any(count is not None and count != window['players'] for count in players):
+            raise ValueError('players-missing')  # the host did not have exactly the window's local players
+        if any(count is None for count in players):
+            notes.append('player count unreadable on this console; checked by screenshot only')
+        began, ended = number(start.get('(game_time)')), number(end.get('(game_time)'))
+        if began is None or ended is None:
+            notes.append('game time unreadable on this console')
+        elif ended < began + 0.5 * window['sample_s'] * TICKS_PER_SECOND:
+            raise ValueError('game-stalled')  # ticks did not advance for the window (a reload, a pause or a hang)
     return notes
 
 

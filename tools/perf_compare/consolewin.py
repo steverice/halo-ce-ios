@@ -212,6 +212,23 @@ def run_bot(window, console, hooks, clock, prints=True):
     return {'kind': 'bot', 'seconds': seconds, 'ended': ended, 'start': start_reads, 'end': end_reads}
 
 
+def run_session(window, console, hooks, clock):
+    """A hosted game (a match or split-screen co-op) that is already running: warm up after player readiness, then
+    sample. The player count and game time are read at both ends of the window for the content checks."""
+    clock.sleep(window['warmup_s'])
+    hooks.prepare()
+    start_reads = _read_all(console, window['fingerprints'], clock)
+    hooks.begin()
+    started = clock.now()
+    clock.sleep(window['sample_s'] / 2)
+    hooks.mid()
+    clock.sleep(max(0.0, window['sample_s'] - (clock.now() - started)))
+    seconds = clock.now() - started
+    end_reads = _read_all(console, window['fingerprints'], clock)
+    hooks.end()
+    return {'kind': window['kind'], 'seconds': seconds, 'start': start_reads, 'end': end_reads, 'ended': 'time'}
+
+
 def run_window(window, console, hooks, clock=None, prints=True):
     clock = clock or RealClock()
     kind = window['kind']
@@ -221,4 +238,6 @@ def run_window(window, console, hooks, clock=None, prints=True):
         return run_cutscene(window, console, hooks, clock, prints)
     if kind == 'bot':
         return run_bot(window, console, hooks, clock, prints)
+    if kind in ('match', 'coop'):
+        return run_session(window, console, hooks, clock)
     raise ValueError('not a console window: ' + kind)

@@ -254,6 +254,47 @@ def native_display(target_id, frame_mode='capped', quality_preset='defaults', dr
     return display
 
 
+HOSTED_KINDS = ('match', 'coop')
+# Where each port takes its hosted-game switches. Chupathingy has no config.toml, so it takes the documented
+# environment names; the others take the same keys in config.toml (Halo OG documents no environment names).
+COOP_ENEMIES_NONE = ('opence-macos', 'corece', 'chupathingy')
+
+
+def hosted_spec(window):
+    """The network-test host spec a hosted window starts: a Slayer match on its map, or the campaign level as co-op."""
+    if window['kind'] == 'match':
+        return 'host:' + window['map']
+    return 'host:levels\\' + window['map'] + '\\' + window['map'] + ':coop'
+
+
+def hosted_settings(target_id, window):
+    """(config lines for [debug], config lines for [network], environment) that start a hosted window on a port."""
+    debug, network, env = [], [], {}
+    players = window['players']
+    spec = hosted_spec(window)
+    if target_id == 'chupathingy':
+        env.update({'HALO_NETWORK_TEST': spec, 'HALO_NETWORK_TEST_START': '8'})
+        if window['kind'] == 'match':
+            env['HALO_START_WITH_ONE_PLAYER'] = '1'  # without it the host never starts the game
+        else:
+            env['HALO_NETWORK_TEST_LOCAL_PLAYERS'] = str(players)
+        if window['kind'] == 'coop':
+            env['HALO_NET_COOP_ENEMIES_MODE'] = 'none'
+        if 'test_input' in window:
+            env['HALO_TEST_INPUT'] = window['test_input']
+        return debug, network, env
+    debug += [f'network_test = "{spec}"', 'network_test_start = 8.0']
+    if players > 1 and target_id == 'visr':
+        debug.append(f'network_test_players = {players}')
+    if window['kind'] == 'coop' and target_id == 'visr':
+        debug.append('enemy_multiplier = 1')
+    if window['kind'] == 'coop' and target_id in COOP_ENEMIES_NONE:
+        network.append('coop_enemies_mode = "none"')
+    if 'test_input' in window:
+        debug.append(f'test_input = "{window["test_input"]}"')
+    return debug, network, env
+
+
 def _native(target, scenario, out, config):
     """Reuse isolated data/config and console readiness from the earlier Mac experiments."""
     app = Path(target['app'])
@@ -291,11 +332,14 @@ def _native(target, scenario, out, config):
     drawable = config.get('drawable', '1280x960')
     # Chupathingy has no config.toml: its frame limit comes from GLFT_ENVIRONMENT and its quality settings stay at its defaults.
     display = '' if target['id'] in GLFT_PORTS else native_display(target['id'], config.get('frame_mode', 'capped'), config.get('quality_preset', 'defaults'), drawable)
-    text = ('[display]\n' + display + '[audio]\nenabled = false\n[network]\nonline = false\n'
-            '[update]\nauto = false\n[community_maps]\nauto_download = false\n'
+    hosted = window['kind'] in HOSTED_KINDS
+    hosted_debug, hosted_network, hosted_env = hosted_settings(target['id'], window) if hosted else ([], [], {})
+    text = ('[display]\n' + display + '[audio]\nenabled = false\n[network]\nonline = false\n' + ''.join(line + '\n' for line in hosted_network)
+            + '[update]\nauto = false\n[community_maps]\nauto_download = false\n'
             '[timer_audio]\nauto_download = false\n[discord]\napplication_id = \"\"\n'
             '[debug]\ntelnet_console = true\ntelnet_console_port = ' + str(port) + '\n'
-            + (f'test_input = "{window["test_input"]}"\n' if window['kind'] == 'bot' and target['id'] == 'visr' else ''))
+            + (f'test_input = "{window["test_input"]}"\n' if window['kind'] == 'bot' and target['id'] == 'visr' else '')
+            + ''.join(line + '\n' for line in hosted_debug))
     # Chupathingy and Halo OG take the telnet console and window mode from the environment (strings in their release
     # binaries, proven by the console lane); Chupathingy has no config.toml. Halo OG's documented `display.window_scale`
     # and `HALO_WINDOWED` (windowed Mac play) set its drawable like CoreCE's and VISR's.
@@ -310,12 +354,15 @@ def _native(target, scenario, out, config):
         (data / 'config.toml').write_text(text)
         (saves / 'config.toml').write_text(text)
     level = level_map if target['id'] == 'visr' else 'levels\\' + level_map + '\\' + level_map
-    (data / 'init.txt').write_text('game_difficulty_set normal\nmap_name ' + level + '\n')
+    # A hosted game picks its own level: a map_name here would start the campaign level before the host does.
+    (data / 'init.txt').write_text('game_difficulty_set normal\n' + ('' if hosted else 'map_name ' + level + '\n'))
     env = {**os.environ, 'HALO_DATA_ROOT': str(data), 'HALO_SAVE_ROOT': str(saves),
            'HALO_HOST_DISPLAY': '%dx%d@2' % drawable_window(drawable), 'HALO_RUNNER': '1', 'MTL_HUD_ENABLED': '1',
            'MTL_HUD_LOG_ENABLED': '1'}
     if window['kind'] == 'bot' and target['id'] != 'visr':
         env['HALO_TEST_INPUT'] = window['test_input']
+    if target['id'] == 'chupathingy':
+        env.update(hosted_env)
     if environment_port:
         (out / 'home').mkdir(exist_ok=True)
         env.update({'HOME': str(out / 'home'), 'HALO_TELNET_CONSOLE': '1', 'HALO_TELNET_CONSOLE_PORT': str(port),

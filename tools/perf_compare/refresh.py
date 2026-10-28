@@ -433,7 +433,7 @@ def refresh(config, summary_path, page_path):
                         measured = metrics(intervals, config.get('display_hz', 60))
                         if config.get('native_method') == 'metalperftrace' and target['id'] not in ('opence-web', *adapters.GLFT_PORTS) and adapters.timing_method(target, run_config) == 'metalperftrace':
                             measured.update(gpu_metrics(parse_metal_trace_gpu(json.loads((folder / 'timeline.json').read_text()))))
-                        if measured['duration_s'] < 58 and (not win or win['kind'] in ('opening', 'battle')):
+                        if measured['duration_s'] < 58 and (not win or win['kind'] in ('opening', 'battle', 'match', 'coop')):
                             raise RuntimeError('short-window')
                         if not run_record.pop('scene_verified'):
                             raise RuntimeError('scene-unverified')

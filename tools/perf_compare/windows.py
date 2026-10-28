@@ -7,7 +7,7 @@ import tomllib
 
 WINDOWS = Path(__file__).with_name('windows.toml')
 SUITES = ('campaign', 'combat', 'cutscenes', 'multiplayer', 'co-op')
-KINDS = ('opening', 'battle', 'cutscene', 'bot')
+KINDS = ('opening', 'battle', 'cutscene', 'bot', 'match', 'coop')
 # Windows the sheet already holds from the previous suite: the map name was the window key.
 LEGACY = ('a10', 'b30')
 DEFAULT_WINDOWS = ['c10', 'b30']
@@ -18,15 +18,21 @@ ALLOWED = {
     'battle': COMMON | {'warmup_s', 'sample_s', 'commands', 'encounters'},
     'cutscene': COMMON | {'script', 'expected_ticks'},
     'bot': COMMON | {'test_input', 'start_tick', 'ticks'},
+    'match': COMMON | {'warmup_s', 'sample_s', 'test_input', 'players'},
+    'coop': COMMON | {'warmup_s', 'sample_s', 'players'},
 }
 REQUIRED = {
     'opening': {'warmup_s', 'sample_s'},
     'battle': {'warmup_s', 'sample_s', 'commands', 'encounters'},
     'cutscene': {'script', 'expected_ticks'},
     'bot': {'test_input', 'start_tick', 'ticks'},
+    'match': {'warmup_s', 'sample_s', 'test_input', 'players'},
+    'coop': {'warmup_s', 'sample_s', 'players'},
 }
 KEY = re.compile(r'[a-z0-9][a-z0-9-]*')
-MAP = re.compile(r'[a-d][0-9]{2}')
+# A stock campaign level (c10) or a multiplayer map the match windows host.
+MAP = re.compile(r'[a-d][0-9]{2}|chillout|bloodgulch')
+MULTIPLAYER_MAPS = ('chillout', 'bloodgulch')
 SCRIPT = re.compile(r'[a-z0-9_]+')
 
 
@@ -54,7 +60,7 @@ def validate(table: dict) -> dict:
             bad('missing ' + ', '.join(sorted(missing)))
         if not isinstance(window.get('map'), str) or not MAP.fullmatch(window['map']):
             bad('map must be a stock campaign level such as c10')
-        for name in ('warmup_s', 'sample_s', 'expected_ticks', 'start_tick', 'ticks'):
+        for name in ('warmup_s', 'sample_s', 'expected_ticks', 'start_tick', 'ticks', 'players'):
             if name in window and (not isinstance(window[name], int) or isinstance(window[name], bool) or window[name] <= 0):
                 bad(f'{name} must be a positive integer')
         for name in ('commands', 'encounters', 'fingerprints'):
@@ -71,8 +77,18 @@ def validate(table: dict) -> dict:
         shot = window.get('reference_shot')
         if shot is not None and not (isinstance(shot, str) and KEY.fullmatch(shot)):
             bad('reference_shot must be an image name')
-        if kind in ('opening', 'battle') and window['sample_s'] != 60:
+        if kind in ('opening', 'battle', 'match', 'coop') and window['sample_s'] != 60:
             bad('sample_s must be 60')
+        if kind == 'match' and window['map'] not in MULTIPLAYER_MAPS:
+            bad('a match is hosted on a multiplayer map')
+        if kind == 'coop' and window['map'] in MULTIPLAYER_MAPS:
+            bad('co-op plays a campaign level')
+        if kind == 'match' and window['players'] != 1:
+            bad('a match has one local player')
+        if kind == 'coop' and window['players'] != 2:
+            bad('co-op has two local players')
+        if kind == 'match' and window['suite'] != 'multiplayer' or kind == 'coop' and window['suite'] != 'co-op':
+            bad('kind and suite disagree')
     return table
 
 
