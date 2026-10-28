@@ -84,3 +84,32 @@ def test_logs_that_do_not_reach_the_window_say_so():
 def test_level_field_is_ignored():
     entries = device_log.parse_frame_log(frame_log())
     assert entries[3]['scene'] == 'gameplay' and 'level' not in entries[3]
+
+
+def slow_logs(fps=12, marker_frame=300):
+    """A device far below its 60 Hz display: 12 fps, a 5 s frame-log entry holds 60 frames, stderr prints every 60."""
+    err = ['halo-linux: scene: gameplay']
+    for frame in range(60, 2401, 60):
+        err.append(f'halo-linux: frame {frame}: 900 draws')
+        if frame == marker_frame:
+            err.append('halo-linux: init.txt: running its commands (debug.init_after)')
+        if frame % 600 == 0:
+            err.append('halo-linux: Metal: frames shown for 1/2/3/4/5+ refreshes at 60.0 Hz: 0/0/0/0/600 (pacing off); '
+                       f'frame CPU {frame / 100:.1f} ms, GPU 40.0 ms (medians; 95th 50.0, 60.0)')
+    rows = ['session start=2026-10-27T13:28:11-0700 build=1 version=0.6.1']
+    for i in range(40):
+        rows.append(f'frames time={5.0 * (i + 1)} scene=gameplay level=b40 frames={5 * fps} fps={fps}.0 mean_ms={1000 / fps:.1f} '
+                    f'p95_ms=90.0 p99_ms=95.0 late={5 * fps} gaps=0 size=1920x1080 cap=0 hz=60.0 footprint_mb=600 peak_mb=700 thermal=nominal')
+    return '\n'.join(err), '\n'.join(rows)
+
+
+def test_battle_window_on_a_device_below_the_display_rate_is_placed_in_seconds():
+    err, log = slow_logs()
+    cols = device_log.window_columns(W['b40-exta'], err, log)
+    # marker at frame 300 (+30 for the print interval) = 27.5 s; the window is 42.5 s to 102.5 s, 60 s long
+    assert cols['seconds'] == pytest.approx(60.0, abs=5.0) and 'note' not in cols
+    assert float(cols['fps_avg']) == pytest.approx(12.0, abs=0.1)
+    # frame-count conversion at 60 Hz would have started 900 frames in and run 3600 frames: past the log's end
+    assert cols['frames'] == pytest.approx(60 * 12, abs=60)
+    assert cols['cpu_ms_p95'] == '50.0' and cols['gpu_ms_p95'] == '60.0'
+    assert float(cols['gpu_ms_p50']) == 40.0
