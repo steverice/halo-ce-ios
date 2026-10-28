@@ -125,7 +125,7 @@ def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | Non
     return {"avg": statistics.geometric_mean(float(r["fps_avg"]) for r in rows),
             "low": (statistics.geometric_mean(float(r["fps_1pct_low"]) for r in rows)
                     if "fps_1pct_low" in query["metrics"] and all(r.get("fps_1pct_low", "") != "" for r in rows) else None),
-            "details": _details(rows, query), "rows": rows}, "", ""
+            "details": _details(rows, query), "windows": sorted(usable), "rows": rows}, "", ""
 
 
 def model(rows: list[dict], query: dict, suite: str) -> dict:
@@ -185,7 +185,8 @@ def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None
     if not drawn:
         return None
     chart, rename = spec["chart"], spec.get("rename", {})
-    labels = [f"{rename.get(e['port_name'], e['port_name'])} {e['version']}".replace('"', "'") for e in drawn]
+    labels = [(f"{rename.get(e['port_name'], e['port_name'])} {e['version']}"
+               + (" (pre-release)" if e["label"].endswith("(pre-release)") else "")).replace('"', "'") for e in drawn]
     averages = [e["value"]["avg"] for e in drawn]
     # A build without a 1% low draws no bar in the second series (a zero-length bar) instead of dropping the series.
     known = [e["value"]["low"] for e in drawn if e["value"]["low"] is not None]
@@ -231,25 +232,36 @@ def _detail_text(entry: dict, columns: list[str]) -> str:
     return f"no {what} reported"
 
 
-def caption_parts(built: dict, selected: set[str] | None = None, columns: list[str] | None = None) -> list[tuple[str, str]]:
+def _missing_windows(entry: dict, windows: list[str]) -> str:
+    """"; b30 not measured yet" for the windows a chart expects and a build has no result for."""
+    have = entry["value"].get("windows")
+    missing = [name for name in windows if have is not None and name not in have]
+    return f"; {', '.join(missing)} not measured yet" if missing else ""
+
+
+def caption_parts(built: dict, selected: set[str] | None = None, columns: list[str] | None = None,
+                  windows: list[str] | None = None) -> list[tuple[str, str]]:
     """The caption as (text, url) pieces; a piece with a url is a build's label, linked to its release page."""
     drawn = [e for e in built["entries"] if e["value"] is not None
              and (entry_key(e) in selected if selected is not None else e["default"])]
     if not drawn:
         return []
     columns = columns or []
+    windows = windows or []
     parts = [(f"{built['box']}. ", "")]
     for index, e in enumerate(drawn):
         parts.append((e["label"], e.get("url", "")))
         parts.append((f" (build {e['build'] or 'unknown'}, measured {e['date']}"
-                      + (f"; {_detail_text(e, columns)}" if columns else "") + ")" + ("; " if index < len(drawn) - 1 else "."), ""))
+                      + (f"; {_detail_text(e, columns)}" if columns else "") + _missing_windows(e, windows) + ")"
+                      + ("; " if index < len(drawn) - 1 else "."), ""))
     return parts
 
 
-def caption(built: dict, selected: set[str] | None = None, columns: list[str] | None = None, links: str = "") -> str:
+def caption(built: dict, selected: set[str] | None = None, columns: list[str] | None = None, links: str = "",
+            windows: list[str] | None = None) -> str:
     """The caption text; `links` is "markdown" or "" (plain)."""
     return "".join(f"[{text}]({url})" if url and links == "markdown" else text
-                   for text, url in caption_parts(built, selected, columns))
+                   for text, url in caption_parts(built, selected, columns, windows))
 
 
 def empty_text(spec: dict, built: dict) -> str:
@@ -270,7 +282,7 @@ def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE, rea
     if text is None:
         parts.extend([empty_text(spec, built), ""])
     else:
-        parts.extend(["```mermaid", text, "```", "", legend(spec, built), "", caption(built, None, spec["query"].get("details"), "markdown"), ""])
+        parts.extend(["```mermaid", text, "```", "", legend(spec, built), "", caption(built, None, spec["query"].get("details"), "markdown", spec["query"].get("windows")), ""])
     for kind, heading in (("not_supported", "Not supported"), ("not_measured", "Not measured")):
         skipped = [e for e in built["entries"] if e["value"] is None and e["kind"] == kind]
         if skipped:

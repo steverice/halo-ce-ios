@@ -165,7 +165,7 @@ def test_model_ticks_the_newest_build_of_each_port_and_lists_the_rest_with_reaso
     assert by_key["visr@main@5"]["value"] is not None
     assert by_key["opence-web@@7"]["reason"] == "safari-remote-automation-disabled"
     assert by_key["opence-web@@7"]["kind"] == "not_measured"
-    assert by_key["visr@0.5.1@7"]["value"] == {"avg": pytest.approx(547.7226, abs=1e-3), "low": pytest.approx(200.0), "details": {}, "rows": by_key["visr@0.5.1@7"]["value"]["rows"]}
+    assert by_key["visr@0.5.1@7"]["value"] == {"avg": pytest.approx(547.7226, abs=1e-3), "low": pytest.approx(200.0), "details": {}, "windows": ["a10", "b30"], "rows": by_key["visr@0.5.1@7"]["value"]["rows"]}
 
 
 def test_suites_without_data_show_not_measured_rows_and_overall_needs_every_suite():
@@ -287,7 +287,7 @@ const rows = m.parseCsv(fs.readFileSync(process.argv[1] + '/docs/benchmarks/resu
 const out = {};
 for (const spec of JSON.parse(fs.readFileSync(0, 'utf8'))) for (const suite of ['campaign', 'multiplayer', 'co-op', 'overall']) {
   const built = m.model(rows, spec.query, suite);
-  out[spec.slug + '/' + suite] = [m.chartSource(spec, built, suite), m.captionText(built, null, spec.query.details), built.entries.map((e) => [m.entryKey(e), e.default, e.kind, e.reason])];
+  out[spec.slug + '/' + suite] = [m.chartSource(spec, built, suite), m.captionText(built, null, spec.query.details, spec.query.windows), built.entries.map((e) => [m.entryKey(e), e.default, e.kind, e.reason])];
 }
 console.log(JSON.stringify(out));
 """
@@ -297,7 +297,7 @@ console.log(JSON.stringify(out));
     for item in specs:
         for suite in charts.SUITE_CHOICES:
             built = charts.model(rows, item["query"], suite)
-            expected = [charts.source(item, built, suite), charts.caption(built, None, item["query"].get("details")),
+            expected = [charts.source(item, built, suite), charts.caption(built, None, item["query"].get("details"), "", item["query"].get("windows")),
                         [[charts.entry_key(e), e["default"], e["kind"], e["reason"]] for e in built["entries"]]]
             assert browser[f"{site_page.slug(item)}/{suite}"] == expected
 

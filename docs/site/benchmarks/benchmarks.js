@@ -72,7 +72,7 @@ function suiteValue(group, query, suite) {
     details[column] = values.some((v) => v === "") ? null
       : (DETAILS[column].geometric ? geometricMean : mean)(values.map(parseFloat));
   }
-  return [{ avg: geometricMean(rows.map((r) => parseFloat(r.fps_avg))), details, low: query.metrics.includes("fps_1pct_low") && rows.every((r) => r.fps_1pct_low !== "") ? geometricMean(rows.map((r) => parseFloat(r.fps_1pct_low))) : null, rows }, "", ""];
+  return [{ avg: geometricMean(rows.map((r) => parseFloat(r.fps_avg))), details, windows: [...usable.keys()].sort(), low: query.metrics.includes("fps_1pct_low") && rows.every((r) => r.fps_1pct_low !== "") ? geometricMean(rows.map((r) => parseFloat(r.fps_1pct_low))) : null, rows }, "", ""];
 }
 
 function model(rows, query, suite) {
@@ -130,7 +130,8 @@ function chartSource(spec, built, suite, selected, palette) {
   const shown = drawn(built, selected);
   if (!shown.length) return null;
   const chart = spec.chart, rename = spec.rename || {};
-  const labels = shown.map((e) => `${rename[e.port_name] || e.port_name} ${e.version}`.replaceAll('"', "'"));
+  const labels = shown.map((e) => (`${rename[e.port_name] || e.port_name} ${e.version}`
+    + (e.label.endsWith("(pre-release)") ? " (pre-release)" : "")).replaceAll('"', "'"));
   const averages = shown.map((e) => e.value.avg);
   // A build without a 1% low draws no bar in the second series (a zero-length bar) instead of dropping the series.
   const known = shown.map((e) => e.value.low).filter((low) => low !== null);
@@ -167,21 +168,27 @@ function detailText(entry, columns) {
 }
 
 // The caption as [text, url] pieces; a piece with a url is a build's label, linked to its release page.
-function captionParts(built, selected, columns) {
+function missingWindows(entry, windows) {
+  const have = entry.value.windows;
+  const missing = (windows || []).filter((name) => have && !have.includes(name));
+  return missing.length ? `; ${missing.join(", ")} not measured yet` : "";
+}
+
+function captionParts(built, selected, columns, windows) {
   const shown = drawn(built, selected);
   if (!shown.length) return [];
   columns = columns || [];
   const parts = [[`${built.box}. `, ""]];
   shown.forEach((e, i) => {
     parts.push([e.label, e.url || ""]);
-    parts.push([` (build ${e.build || "unknown"}, measured ${e.date}` + (columns.length ? `; ${detailText(e, columns)}` : "")
+    parts.push([` (build ${e.build || "unknown"}, measured ${e.date}` + (columns.length ? `; ${detailText(e, columns)}` : "") + missingWindows(e, windows)
       + ")" + (i < shown.length - 1 ? "; " : "."), ""]);
   });
   return parts;
 }
 
-function captionText(built, selected, columns) {
-  return captionParts(built, selected, columns).map(([text]) => text).join("");
+function captionText(built, selected, columns, windows) {
+  return captionParts(built, selected, columns, windows).map(([text]) => text).join("");
 }
 
 // Plain-language text for reason codes (docs/benchmarks/reasons.toml); unknown codes pass through.
@@ -361,7 +368,7 @@ async function start() {
     drawList(section.querySelector(".bench-rows"), spec, built, state);
     drawLegend(section.querySelector(".bench-legend"), spec,
       !built.entries.length ? 0 : drawn(built, state.selected[spec.slug]).some((e) => e.value.low !== null) ? 2 : 1);
-    section.querySelector(".bench-caption").replaceChildren(...captionParts(built, state.selected[spec.slug], spec.query.details)
+    section.querySelector(".bench-caption").replaceChildren(...captionParts(built, state.selected[spec.slug], spec.query.details, spec.query.windows)
       .map(([text, url]) => (url ? el("a", { href: url, rel: "noopener" }, text) : text)));
     writeHash(state, specs);
   }

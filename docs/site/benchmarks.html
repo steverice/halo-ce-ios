@@ -63,12 +63,12 @@
 </section>
 <section class="bench" data-platform="iphone-ipad" aria-labelledby="h-iphone-ipad">
 <h2 id="h-iphone-ipad">iPhone and iPad</h2>
-<p>Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device&#x27;s display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it.</p>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device&#x27;s display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it. A build measured in only some of the suite&#x27;s windows is charted from those windows, and the caption names the windows still to measure.</p>
 <div class="bench-grid">
-<div class="bench-media"><figure class="device device-ipad"><div class="bench-chart"><p class="bench-empty">Coming soon with VISR 0.6.0</p></div></figure>
-<p class="bench-legend"></p>
-<p class="bench-caption"></p></div>
-<fieldset class="bench-rows" hidden><legend>Builds</legend></fieldset>
+<div class="bench-media"><figure class="device device-ipad"><div class="bench-chart"><img src="benchmarks/static-iphone-ipad.svg" alt="iPhone and iPad: average and 1% low fps per build, Campaign suite"></div></figure>
+<p class="bench-legend"><span class="swatch avg" aria-hidden="true"></span> Average fps  <span class="swatch low" aria-hidden="true"></span> 1% low fps</p>
+<p class="bench-caption">M1 iPad Pro. <a href="https://github.com/steverice/visr/releases/tag/visr-v0.6.0" rel="noopener">VISR 0.6.0</a> (build 20261027.111952, measured 2026-10-27; no on-time share reported); <a href="https://github.com/bmanturner/halo-ce-universal/releases/tag/apple-v0.3.0" rel="noopener">Beeman apple-v0.3.0</a> (build unknown, measured 2026-10-27; no on-time share reported; b30 not measured yet); <a href="https://github.com/JizzyRivers/chupathingyce-ios/releases/tag/v0.2.0" rel="noopener">ChupathingyCE iOS v0.2.0 (pre-release)</a> (build 0.8.0h-dev d7fafc8, measured 2026-10-27; no on-time share reported; b30 not measured yet).</p></div>
+<fieldset class="bench-rows"><legend>Builds</legend><label><input type="checkbox" value="visr@0.6.0@20261027.111952" checked> <a href="https://github.com/steverice/visr/releases/tag/visr-v0.6.0" rel="noopener">VISR 0.6.0</a> (build 20261027.111952, 2026-10-27)</label><label><input type="checkbox" value="beeman@apple-v0.3.0@" checked> <a href="https://github.com/bmanturner/halo-ce-universal/releases/tag/apple-v0.3.0" rel="noopener">Beeman apple-v0.3.0</a> (build unknown, 2026-10-27)</label><label><input type="checkbox" value="chupathingyce-ios@v0.2.0@0.8.0h-dev d7fafc8" checked> <a href="https://github.com/JizzyRivers/chupathingyce-ios/releases/tag/v0.2.0" rel="noopener">ChupathingyCE iOS v0.2.0 (pre-release)</a> (build 0.8.0h-dev d7fafc8, 2026-10-27)</label><label class="off"><input type="checkbox" value="halopad@v0.3.12@" disabled> <a href="https://github.com/chrissotraidis/projectreach/releases/tag/v0.3.12" rel="noopener">HaloPad v0.3.12</a> (build unknown, 2026-10-27). Not measured: Not measured yet.</label><label class="off"><input type="checkbox" value="snailbbq@v0.2.118-beta@" disabled> <a href="https://github.com/SnailBBQ/Halo-CE-IOS/releases/tag/v0.2.118-beta" rel="noopener">SnailBBQ v0.2.118-beta</a> (build unknown, 2026-10-27). Not measured: Not measured yet.</label></fieldset>
 </div>
 </section>
 <section class="bench" data-platform="apple-tv" aria-labelledby="h-apple-tv">
@@ -93,21 +93,22 @@
 </section>
 <div class="method">
 <h2>Methodology</h2>
-<p>The snapshot holds 53 measured windows for 5 ports on 3 platforms (Mac, Apple TV, Vision Pro). Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.</p>
+<p>The snapshot holds 57 measured windows for 7 ports on 4 platforms (Mac, iPhone/iPad, Apple TV, Vision Pro). Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.</p>
 <h3>Timing by platform</h3>
 <ul>
 <li><strong>Mac</strong> (M4 Mac mini, M6 Mac mini; frame cap on and uncapped): Metal's per-frame timing: <code>metalperftrace</code> on-glass drawable intervals for the app's process. Ports: VISR, OpenCE-macOS, CoreCE.</li>
 <li><strong>Mac</strong> (M4 Mac mini, M6 Mac mini; frame cap on): Safari <code>requestAnimationFrame</code> callbacks, which measure browser scheduling. Ports: OpenCE web.</li>
+<li><strong>iPhone/iPad</strong> (M1 iPad Pro; frame cap on): Instruments Metal System Trace recorded over the network; each frame's time is a row of the <code>displayed-surfaces-interval</code> table. Against VISR's own frame log over the same window, average rate and p95/p99 agree within 1%. Ports: VISR, Beeman, ChupathingyCE iOS.</li>
 <li><strong>Apple TV</strong> (Apple TV HD; frame cap on): Instruments Metal System Trace recorded over the network; each frame's time is a row of the <code>displayed-surfaces-interval</code> table. Against VISR's own frame log over the same window, average rate and p95/p99 agree within 1%. Ports: VISR.</li>
 <li><strong>Vision Pro</strong> (M2 Vision Pro; frame cap on): The app's own benchmark report: VISR's report, or the telemetry of a port that has no timing tool, counted over the same warm-up and sampling window. Ports: master-chef, VISR.</li>
 </ul>
 <p>master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display, so it has no uncapped rows.</p>
-<p>Apple TV and Vision Pro charts use runs presented at the device's display rate or, where its profile sets a lower frame cap, at that cap, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.</p>
+<p>iPhone/iPad, Apple TV, and Vision Pro charts use runs presented at the device's display rate or, where its profile sets a lower frame cap, at that cap, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.</p>
 <h3>Uncapped charts</h3>
 <p>Uncapped charts show average fps and GPU time per rendered frame, not 1% low rates. When a game renders faster than the display refreshes, macOS hands drawables to the window server in bursts, so the on-glass intervals record when the window server latches drawables rather than the frames a player sees; VISR's intervals alternate between about 0 ms and about 5 ms. Percentiles of those intervals, the 1% low included, describe that latching. The average counts frames shown per second and is not affected. GPU time per rendered frame comes from the same Metal trace. A game that renders several frames for each frame it shows has all of their GPU time added to the next shown frame, so each shown interval's GPU time is split by its command buffers, one per rendered frame, and reported as the median and the 90th percentile over rendered frames. Capped and device charts keep the 1% low and add the share of frames that arrive on time. The spreadsheet keeps every column.</p>
 <h3>Suites</h3>
 <ul>
-<li><strong>Campaign:</strong> every measured window: the opening of a10, the opening of b30, and the b30 beach encounter 90 seconds later (<code>b30 +90 s</code>). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set. A set with fewer than three valid rounds is marked incomplete. Measured on 5 ports: VISR, OpenCE-macOS, OpenCE web, CoreCE, master-chef.</li>
+<li><strong>Campaign:</strong> every measured window: the opening of a10, the opening of b30, and the b30 beach encounter 90 seconds later (<code>b30 +90 s</code>). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set. A set with fewer than three valid rounds is marked incomplete. Measured on 7 ports: VISR, OpenCE-macOS, OpenCE web, CoreCE, master-chef, Beeman, ChupathingyCE iOS.</li>
 <li><strong>Multiplayer:</strong> a hosted Slayer match on Chill Out and one on Blood Gulch, each a sampling window; the suite value is the mean over both maps' windows. One local player, driven by the scripted bot input, hosts and starts the match with no other humans. Bot input is paced from the wall clock, so runs on different ports, and repeated runs on one port, play equivalent workloads, not identical replays. No measurements yet.</li>
 <li><strong>Co-op:</strong> local split-screen campaign co-op, two players. Enemy scaling is set explicitly to static 1x on every port that has the option: VISR sets <code>debug.enemy_multiplier = 1</code>, and OpenCE-macOS and CoreCE set their enemies-per-player scaling to static 1x. A port without the option runs its own fixed behavior, and its notes column in the spreadsheet says so. A port without split screen shows &quot;Does not support split screen&quot; and the status <code>not_supported</code>; that differs from &quot;not measured&quot;, which means the suite has not been run for the build. No measurements yet.</li>
 <li><strong>Overall:</strong> per build, the geometric mean of the suites' average rates and the geometric mean of their 1% low rates, each suite weighted equally, so every suite counts the same whatever its frame-rate scale. A build missing a suite has no overall bar.</li>
@@ -195,8 +196,8 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
  {
   "slug": "iphone-ipad",
   "heading": "iPhone and iPad",
-  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it.",
-  "empty": "Coming soon with VISR 0.6.0",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it. A build measured in only some of the suite's windows is charted from those windows, and the caption names the windows still to measure.",
+  "empty": "No iPhone or iPad results yet.",
   "box": "M1 iPad Pro",
   "series_labels": [
    "Average fps",
@@ -227,6 +228,10 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
    ],
    "details": [
     "on_time_pct"
+   ],
+   "windows": [
+    "a10",
+    "b30"
    ],
    "port_order": [
     "visr",
@@ -362,7 +367,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
   }
  }
 ]</script>
-<script type="application/json" id="chart-reasons">{"exact": {"safari-remote-automation-disabled": "Safari could not be automated on this Mac.", "console-unavailable": "The app has no frame-time readout we could capture.", "not measured on the reference box": "Not run on this platform's reference device.", "no uncapped matched-stock measurement": "Only measured with the frame cap on or with other settings.", "no measurement at the display rate": "Only measured with other frame-rate or quality settings.", "permission-denied": "The system did not allow the measurement."}, "patterns": {"no_suite_data": "The {suite} suite has not been run for this build.", "missing_suites": "No overall result: missing {suites}."}}</script>
+<script type="application/json" id="chart-reasons">{"exact": {"safari-remote-automation-disabled": "Safari could not be automated on this Mac.", "console-unavailable": "The app has no frame-time readout we could capture.", "not measured on the reference box": "Not run on this platform's reference device.", "no uncapped matched-stock measurement": "Only measured with the frame cap on or with other settings.", "no measurement at the display rate": "Only measured with other frame-rate or quality settings.", "not measured yet": "Not measured yet.", "permission-denied": "The system did not allow the measurement."}, "patterns": {"no_suite_data": "The {suite} suite has not been run for this build.", "missing_suites": "No overall result: missing {suites}."}}</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.min.js" integrity="sha384-o+g/BxPwhi0C3RK7oQBxQuNimeafQ3GE/ST4iT2BxVI4Wzt60SH4pq9iXVYujjaS" crossorigin="anonymous"></script>
 <script src="benchmarks/benchmarks.js"></script>
 </body>
