@@ -1,17 +1,22 @@
+## Unreleased
+
+### Full changelog
+
+### fix
+
+- **loading**: fade the loading chant out under the level's first sound instead of cutting it — the level's music and ambience fade in over about 250 ms from its first frame, and `progress_bar_eachframe` stopped the chant outright about 75 ms in, leaving the mix about 10 dB down for about 120 ms at the handover; the chant now fades from its last volume to silence over 400 ms, then stops
+
 ## visr-v0.6.2 (2026-10-28)
 
 ### Summary
 
-- Server browser: each server now shows an icon for its kind (dedicated, player-hosted, or LAN), and the selected row's rules line names the kind.
-- Server browser: dedicated servers stay listed while the browser is open. Servers whose join failed or that have closed now show FAILED or CLOSED instead of looking joinable.
-- Server browser: a game also found through a broker now shows its live player count, and servers with no region listed no longer disappear.
-- Mac: with an unlimited or high frame rate cap, frames now wait for the display instead of being drawn and thrown away.
-- Lighting effects now render more efficiently, which may help in busy multiplayer scenes. Check for any odd-looking light effects.
-- External displays: the display now stays in its native mode and VISR scales the picture itself, so a slow monitor no longer gets stepped down to a lower mode. Try plugging in an external display.
-- Pro-class iPhones can now output to an external display at a higher resolution. Look for sharper output.
-- Data packs: a cache the system partly purged now recovers instead of getting stuck on "Pack sequence was already seen."
+- The server browser now lists OpenCE's official dedicated servers, and each game shows an icon for its kind of server. Try joining one.
+- An external display stays in its native mode, and VISR scales the game to it instead of switching the display's mode.
+- On Pro iPhones (and the iPhone 17 and iPhone Air), the game renders sharper on an external display.
+- On Apple TV, benchmark recordings repair themselves after the system clears the app's cache, instead of staying unavailable.
+- Light volumes (glowing lights and their halos) take less work to draw. Report anything that looks different around lights.
 
-iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
+iCloud Saves starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
 
 VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
 
@@ -47,7 +52,6 @@ VISR automatically sends game performance data to improve the game. Reports excl
 
 ### fix
 
-- **loading**: fade the loading chant out under the level's first sound instead of cutting it — the level's music and ambience fade in over about 250 ms from its first frame, and `progress_bar_eachframe` stopped the chant outright about 75 ms in, leaving the mix about 10 dB down for about 120 ms at the handover; the chant now fades from its last volume to silence over 400 ms, then stops
 - **perf-compare**: keep the swap-log tests off a macOS-only clock — `time.CLOCK_UPTIME_RAW` does not exist on Linux, so the portable tooling job failed; `glft.uptime_ns` falls back to the monotonic clock
 - **perf-compare**: poll game time for Chupathingy's console windows — its console does not return a script's delayed prints, so cutscene and bot windows end on the tick count, and a window that never opened is an empty capture to repeat
 - **perf-compare**: do not call a slow simulation a checkpoint revert — a battle is rejected as reverted only when game time falls back or advances under half the sample's ticks
@@ -92,7 +96,6 @@ VISR automatically sends game performance data to improve the game. Reports excl
 
 ### revert
 
-- hold the loading-chant fade for the 0.6.2 cut [skip ci] — reverts `f56c5695d`, so this commit's tree is `6a9e67f69`'s and the release is cut from it; the fade returns right after the tag for 0.6.3
 - **upscale**: gate background upscaling on opportunistic capacity again — the 0 MB reading on the phone was real (it had 0 bytes available), and important-usage capacity let background upscaling fill a phone to within its 256 MB reserve; this reverts `8feb6eae3`
 
 ### docs
