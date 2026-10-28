@@ -2275,6 +2275,16 @@
             "apple"
           ]
         },
+        "audio_reopen_test": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Closes and reopens the sound device every this many seconds, as an audio route change does (an external display connecting), to check that sound keeps playing across one. 0 (default): never.",
+          "x-environment": "HALO_AUDIO_REOPEN_TEST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "low_power_frame_rate": {
           "type": "string",
           "default": "true",

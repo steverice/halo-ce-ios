@@ -100,10 +100,12 @@ int main(void)
     }
     assert(callbacks == 100);
     assert(consumed == produced);
-    /* Route replacement keeps the guest handle and PCM source format. */
+    /* Route replacement keeps the guest handle and PCM source format. (The old stream is freed before the new one
+       is made, so the new one may have its address: the device it is bound to tells them apart.) */
+    SDL_AudioDeviceID old_device=SDL_GetAudioStreamDevice(stream);
     host_sdl_audio_route_changed();
     SDL_AudioStream *replacement=handle_get(handle,_handle_audio);
-    assert(replacement && replacement!=stream);
+    assert(replacement && SDL_GetAudioStreamDevice(replacement)!=old_device);
     SDL_PauseAudioStreamDevice(replacement);
     SDL_AudioSpec source;
     assert(SDL_GetAudioStreamFormat(replacement,&source,NULL));
@@ -118,6 +120,32 @@ int main(void)
     SDL_ResumeAudioStreamDevice(replacement);
     host_sdl_audio_route_changed();
     assert(!SDL_AudioStreamDevicePaused(handle_get(handle,_handle_audio)));
+    /* A reopen must reach the physical device (on iOS a new AudioQueue on the new route): a stream opened
+       while the old one was still bound joined the old device. The sample-frames hint applies only when a
+       physical device opens, so the new size shows the device itself was closed and opened. */
+    {
+        SDL_AudioSpec device_spec;
+        int before=0,after=0;
+        assert(SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(handle_get(handle,_handle_audio)),&device_spec,&before));
+        SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES,before==2048?"1536":"2048");
+        host_sdl_audio_route_changed();
+        assert(SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(handle_get(handle,_handle_audio)),&device_spec,&after));
+        assert(after!=before && (after==2048 || after==1536));
+        assert(!SDL_AudioStreamDevicePaused(handle_get(handle,_handle_audio)));
+        SDL_ResetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES);
+    }
+    /* A stream that should be playing with no callback for 1.5 s is stalled; a paused one never is, and a resume
+       starts its clock again. (Checked at times ahead of the clock: the dummy device's callbacks keep coming.) */
+    {
+        Uint64 now=SDL_GetTicksNS();
+        assert(!host_sdl_audio_stalled(now));
+        assert(host_sdl_audio_stalled(now+10*SDL_NS_PER_SECOND));
+        SDL_PauseAudioStreamDevice(handle_get(handle,_handle_audio));
+        assert(!host_sdl_audio_stalled(now+10*SDL_NS_PER_SECOND));
+        atomic_store(&audio_bindings[0]->last_callback_ns,now-10*SDL_NS_PER_SECOND);
+        assert(host_sdl_resume_audio_stream_device(handle));
+        assert(!host_sdl_audio_stalled(SDL_GetTicksNS()));
+    }
     alarm(0);
     printf("PASS: %u SDL callbacks, %u exact PCM samples; no cross-thread stream deadlock\n", callbacks, consumed);
     return 0;

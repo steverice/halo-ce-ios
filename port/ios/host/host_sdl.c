@@ -556,6 +556,12 @@ struct audio_binding
 	Uint64 timing_since;
 	unsigned long timing_callbacks, timing_late;
 	double timing_slowest_ms, timing_slowest_sound_ms;
+	/* SDL_GetTicksNS at the latest callback, or when the stream was opened or resumed (host_sdl_audio_stalled) */
+	_Atomic Uint64 last_callback_ns;
+	/* the guest's format, which every reopen keeps; and, while a reopen has failed and the slot has no stream,
+	whether it was playing (host_sdl_audio_route_changed) */
+	SDL_AudioSpec source;
+	bool playing_when_lost;
 };
 
 /* Every 30 seconds, how long the guest took to mix a callback's sound against how long that sound plays: a mix
@@ -616,6 +622,8 @@ static void SDLCALL audio_callback(void *userdata, SDL_AudioStream *stream, int 
 	struct audio_binding *binding = userdata;
 	Uint64 began = SDL_GetTicksNS();
 
+	atomic_store(&binding->last_callback_ns, began);
+
 	pthread_mutex_lock(&binding->lock);
 	binding->length = 0;
 	binding->additional = additional;
@@ -646,34 +654,84 @@ static void SDLCALL audio_callback(void *userdata, SDL_AudioStream *stream, int 
 in the background (host_lifecycle.m) */
 static SDL_AudioStream *audio_streams[4];
 static struct audio_binding *audio_bindings[4];
+/* a reopen failed: host_sdl_audio_stalled says so, so the caller tries again */
+static int audio_retry;
 
 /* Keep the guest's source format stable. SDL converts it to the new route's
-   device rate; changing the source rate would change the game's pitch. */
+   device rate; changing the source rate would change the game's pitch.
+
+   Every stream is closed before any is opened again. SDL keeps one physical
+   device (on iOS, one AudioQueue) open while any stream is bound to it, so a
+   stream opened before the old one closed joined the same queue, and a queue
+   the system had stopped (an interruption, or a route change such as an HDMI
+   display connecting mid-game) stayed silent through every later reopen. Only
+   a physical device closed and opened again gets a new queue on the current
+   route at its current rate and channel count. */
 void host_sdl_audio_route_changed(void)
 {
+    SDL_AudioStream *old[SDL_arraysize(audio_streams)]={0};
+    bool paused[SDL_arraysize(audio_streams)];
+    int count=0;
     for(size_t i=0;i<SDL_arraysize(audio_streams);i++) {
-        SDL_AudioStream *old=audio_streams[i];
+        if(!audio_bindings[i])continue;
+        old[i]=audio_streams[i];
+        /* (a slot whose last reopen failed has no stream: it is opened again as it was) */
+        if(!old[i]){paused[i]=!audio_bindings[i]->playing_when_lost;count++;continue;}
+        /* (pausing waits for a callback under way, so none runs while the streams change) */
+        paused[i]=SDL_AudioStreamDevicePaused(old[i]);
+        SDL_PauseAudioStreamDevice(old[i]);
+        count++;
+    }
+    if(!count)return;
+    audio_retry=0;
+    /* the guest's calls find no stream until the replacement is in place (a put is dropped, as into a paused stream) */
+    pthread_mutex_lock(&handle_lock);
+    for(size_t i=0;i<SDL_arraysize(audio_streams);i++)
+        if(old[i]) {handles[audio_bindings[i]->handle].object=NULL;audio_streams[i]=NULL;}
+    pthread_mutex_unlock(&handle_lock);
+    for(size_t i=0;i<SDL_arraysize(audio_streams);i++)
+        if(old[i])SDL_DestroyAudioStream(old[i]);
+    for(size_t i=0;i<SDL_arraysize(audio_streams);i++) {
         struct audio_binding *binding=audio_bindings[i];
-        SDL_AudioSpec source;
-        if(!old || !binding || !SDL_GetAudioStreamFormat(old,&source,NULL))continue;
-        bool paused=SDL_AudioStreamDevicePaused(old);
-        SDL_PauseAudioStreamDevice(old);
-        SDL_AudioStream *replacement=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&source,
+        if(!binding)continue;
+        SDL_AudioStream *replacement=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&binding->source,
             binding->callback?audio_callback:NULL,binding);
         if(!replacement) {
-            if(!paused)SDL_ResumeAudioStreamDevice(old);
-            host_logf(HOST_LOG_ERROR,"audio route: cannot reopen stream: %s",SDL_GetError());continue;
+            /* (the slot stays bound to its handle with no stream: host_sdl_audio_stalled asks for another try) */
+            host_logf(HOST_LOG_ERROR,"audio route: cannot reopen stream: %s",SDL_GetError());
+            binding->playing_when_lost=!paused[i];
+            audio_retry=1;
+            continue;
         }
         pthread_mutex_lock(&handle_lock);
         handles[binding->handle].object=replacement;
         audio_streams[i]=replacement;
         pthread_mutex_unlock(&handle_lock);
-        SDL_DestroyAudioStream(old);
-        if(!paused)SDL_ResumeAudioStreamDevice(replacement);
+        atomic_store(&binding->last_callback_ns,SDL_GetTicksNS());
+        if(!paused[i])SDL_ResumeAudioStreamDevice(replacement);
         SDL_AudioSpec output;
         if(SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(replacement),&output,NULL))
-            host_logf(HOST_LOG_INFO,"audio route: stream reopened at %d Hz (guest source %d Hz)",output.freq,source.freq);
+            host_logf(HOST_LOG_INFO,"audio route: stream reopened on a new device at %d Hz, %d channels (guest source %d Hz)",
+                output.freq,output.channels,binding->source.freq);
     }
+}
+
+/* A stream that should be playing whose callbacks stopped coming: the system stopped the device without a
+   notification that reached SDL or the route check (an interruption whose end was never sent, a route change
+   while the app was in the background). now: SDL_GetTicksNS. 1 when a stream has been silent for over 1.5 s. */
+int host_sdl_audio_stalled(Uint64 now)
+{
+    int stalled=0;
+    for(size_t i=0;i<SDL_arraysize(audio_streams);i++) {
+        struct audio_binding *binding=audio_bindings[i];
+        if(!binding || !binding->callback)continue;
+        /* (a reopen that failed) */
+        if(!audio_streams[i])continue;
+        if(SDL_AudioStreamDevicePaused(audio_streams[i]))continue;
+        Uint64 last=atomic_load(&binding->last_callback_ns);
+        if(last && now>last && now-last>1500*SDL_NS_PER_MS)stalled=1;
+    }
+    return stalled || audio_retry;
 }
 
 void host_sdl_audio_pause(int paused)
@@ -686,7 +744,11 @@ void host_sdl_audio_pause(int paused)
 			if (paused)
 				SDL_PauseAudioStreamDevice(audio_streams[index]);
 			else
+			{
+				if (audio_bindings[index])
+					atomic_store(&audio_bindings[index]->last_callback_ns, SDL_GetTicksNS());
 				SDL_ResumeAudioStreamDevice(audio_streams[index]);
+			}
 		}
 }
 
@@ -700,6 +762,7 @@ uint32_t host_sdl_open_audio_stream(uint32_t device, const void *spec, uint32_t 
 	binding->callback = callback;
 	binding->userdata = userdata;
 	binding->format = ((const SDL_AudioSpec *)spec)->format;
+	binding->source = *(const SDL_AudioSpec *)spec;
 	binding->bytes_per_second = (double)((const SDL_AudioSpec *)spec)->freq * ((const SDL_AudioSpec *)spec)->channels *
 		SDL_AUDIO_BYTESIZE(binding->format);
 	pthread_mutex_init(&binding->lock, NULL);
@@ -775,7 +838,12 @@ int host_sdl_put_audio_stream_data(uint32_t stream, const void *data, int length
 int host_sdl_resume_audio_stream_device(uint32_t stream)
 {
 	SDL_AudioStream *object = handle_get(stream, _handle_audio);
+	size_t index;
 
+	/* (a stream paused for a while is not stalled the moment it resumes: host_sdl_audio_stalled) */
+	for (index = 0; index < SDL_arraysize(audio_bindings); index++)
+		if (audio_bindings[index] && audio_bindings[index]->handle == stream)
+			atomic_store(&audio_bindings[index]->last_callback_ns, SDL_GetTicksNS());
 	return object ? SDL_ResumeAudioStreamDevice(object) : 0;
 }
 

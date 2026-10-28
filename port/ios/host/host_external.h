@@ -29,5 +29,7 @@ int host_external_ready(void);
 void host_external_mode_label(char *text, size_t size);
 /* gpu_metal.m: drains the old output before exchanging layers. */
 int gpu_metal_output(void *layer, void *screen, int width, int height);
-/* host_sdl.c: refresh the output stream after an audio route change. */
+/* host_sdl.c: close and reopen the output streams (and so the device) after an audio route change. */
 void host_sdl_audio_route_changed(void);
+/* host_sdl.c: a stream that should be playing has had no callback for over 1.5 s (now: SDL_GetTicksNS). */
+int host_sdl_audio_stalled(unsigned long long now);

@@ -508,12 +508,27 @@ static void label_layout(void) {
     playing_label.alpha=host_external_companion_dim();
 }
 #endif
+#if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
+/* Sound back on the route the system has now (the player's own pick in the output menu is one), after a route
+   change, an interruption's end, a media services reset or a stall: the session made active again (the system
+   deactivates it in an interruption, and SDL activates it only when its first device opens), then every stream
+   and the device under them closed and opened again on that route. */
+static void audio_reopen(const char *why) {
+    NSError *error=nil;
+    if(![AVAudioSession.sharedInstance setActive:YES error:&error])
+        host_logf(HOST_LOG_WARN,"audio route: cannot make the audio session active (%s): %s",why,
+            error.localizedDescription.UTF8String);
+    host_logf(HOST_LOG_INFO,"audio route: reopening the sound device (%s), output %s",why,audio_route_text().UTF8String);
+    host_sdl_audio_route_changed();
+}
+#endif
 void host_external_poll(void) {
     if(atomic_exchange(&audio_changed,0)) {
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
         AVAudioSession *audio=AVAudioSession.sharedInstance;
-        if(host_audio_route_update(&audio_route,audio_route_text().UTF8String,audio.sampleRate,
-            atomic_exchange(&audio_recover,0)))host_sdl_audio_route_changed();
+        int recover=atomic_exchange(&audio_recover,0);
+        if(host_audio_route_update(&audio_route,audio_route_text().UTF8String,audio.sampleRate,recover))
+            audio_reopen(recover?"the system's audio came back":"the route changed");
         host_logf(HOST_LOG_INFO,"audio route: category=%s mode=%s output=%s rate=%.0f Hz latency=%.3f s",
             audio.category.UTF8String,audio.mode.UTF8String,audio_route_text().UTF8String,
             audio.sampleRate,audio.outputLatency);
@@ -526,6 +541,33 @@ void host_external_poll(void) {
 #endif
     }
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
+    /* A stream that should be playing (not paused by the game or the background) whose device has stopped asking
+       for sound: no callback for 1.5 s, whatever the game's sound was. A silent game still gets its callbacks, so
+       quiet moments never count. Reopened at once, then after 3, 6 and 12 s and every 30 s while the device stays
+       stopped; the waits start over once callbacks come again. */
+    {
+        static unsigned long long stall_checked, stall_reopened, test_reopened, stall_wait;
+        static double test_every=-1.0;
+        unsigned long long now=SDL_GetTicksNS();
+        /* (debug.audio_reopen_test: the reopen a route change makes, on a timer, for a device that cannot be replugged) */
+        if(test_every<0.0)test_every=host_config_real("debug.audio_reopen_test",0.0);
+        if(test_every>0.0) {
+            if(!test_reopened)test_reopened=now;
+            else if(now-test_reopened>=(unsigned long long)(test_every*1e9)) {
+                test_reopened=now;
+                audio_reopen("debug.audio_reopen_test");
+            }
+        }
+        if(now-stall_checked>=250*SDL_NS_PER_MS) {
+            stall_checked=now;
+            if(!host_sdl_audio_stalled(now))stall_wait=3*SDL_NS_PER_SECOND;
+            else if(now-stall_reopened>=stall_wait) {
+                stall_reopened=now;
+                stall_wait=stall_wait*2>30*SDL_NS_PER_SECOND?30*SDL_NS_PER_SECOND:stall_wait*2;
+                audio_reopen("the sound device stopped asking for sound for 1.5 s");
+            }
+        }
+    }
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000
     if(@available(iOS 27.0,*)) {
         UISceneAccessoryRegistration *registration=accessory_registration;

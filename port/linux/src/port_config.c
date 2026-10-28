@@ -1439,6 +1439,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.frame_load_every", _config_real, "0.0", "HALO_FRAME_LOAD_EVERY", _environment_value, _platform_ios,
 		"With debug.frame_load_cpu: the made-up work comes and goes, on in every\n"
 		"other span of this many seconds, as a fight would. 0 (default): always." },
+	{ "debug.audio_reopen_test", _config_real, "0.0", "HALO_AUDIO_REOPEN_TEST", _environment_value, _platform_ios,
+		"Closes and reopens the sound device every this many seconds, as an\n"
+		"audio route change does (an external display connecting), to check\n"
+		"that sound keeps playing across one. 0 (default): never." },
 	{ "debug.low_power_frame_rate", _config_string, "\"true\"", "HALO_LOW_POWER_FRAME_RATE", _environment_value, _platform_ios,
 		"In Low Power Mode, gameplay and cutscenes aim for half the frame rate\n"
 		"they aim for otherwise (120 to 60, 60 to 30, never under 30) and menus\n"
