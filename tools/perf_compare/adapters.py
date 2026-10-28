@@ -283,7 +283,8 @@ def hosted_settings(target_id, window):
         if 'test_input' in window:
             env['HALO_TEST_INPUT'] = window['test_input']
         return debug, network, env
-    debug += [f'network_test = "{spec}"', 'network_test_start = 8.0']
+    toml_spec = spec.replace('\\', '\\\\')  # a TOML string: each backslash of the level path is escaped
+    debug += [f'network_test = "{toml_spec}"', 'network_test_start = 8.0']
     if players > 1 and target_id == 'visr':
         debug.append(f'network_test_players = {players}')
     if window['kind'] == 'coop' and target_id == 'visr':
