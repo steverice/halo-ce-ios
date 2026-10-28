@@ -397,6 +397,8 @@ def refresh(config, summary_path, page_path):
                     if record['status'] == 'unavailable':
                         break
                     win = window_table.get(scenario)
+                    if (record.get('window_status') or {}).get(scenario, {}).get('status') == 'unavailable':
+                        continue
                     if win and win['kind'] != 'opening' and not adapters.has_console(target):
                         record.setdefault('window_status', {})[scenario] = {
                             'status': 'not_measured', 'reason': 'no unattended console'}
@@ -460,6 +462,14 @@ def refresh(config, summary_path, page_path):
                             pending.insert(0, scenario)
                             errors.append({'target': target['id'], 'scenario': scenario, 'round': round_index + 1,
                                            'error': 'no-intervals (retrying)'})
+                            continue
+                        if record['reason'] == 'no-intervals':
+                            # Three empty captures of one window: that window is unavailable, and the target's other windows still run.
+                            record.setdefault('window_status', {})[scenario] = {
+                                'status': 'unavailable', 'reason': 'no frames in the trace'}
+                            record['reason'] = ''
+                            errors.append({'target': target['id'], 'scenario': scenario, 'round': round_index + 1,
+                                           'error': 'no-intervals'})
                             continue
                         if record['reason'] in {'console-unavailable', 'browser-game-setup-required', 'scene-unverified', 'no-intervals', 'host-not-quiet', 'display-locked', 'resolution-mismatch'}:
                             record['status'] = 'unavailable'

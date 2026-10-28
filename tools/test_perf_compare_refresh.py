@@ -505,10 +505,11 @@ def test_a_trace_without_frames_repeats_the_round_instead_of_ending_the_target(t
     config = {'output': str(tmp_path / 'raw'), 'public_machine': 'Mac mini (M4)', 'windows': ['c10'], 'native_method': 'metalperftrace',
               'targets': [{'id': 'visr'}]}
     m.refresh(config, tmp_path / 'summary.json', tmp_path / 'page.md')
-    # three attempts at round 1 (the original and two repeats), then the target ends as unavailable
+    # three attempts at round 1 (the original and two repeats), then that window is unavailable and the later rounds skip it
     assert calls == ['c10'] * 3
     [record] = json.loads((tmp_path / 'summary.json').read_text())['records']
-    assert [x['reason'] for x in record['rejected']] == ['no-intervals', 'no-intervals'] and record['status'] == 'unavailable'
+    assert [x['reason'] for x in record['rejected']] == ['no-intervals', 'no-intervals']
+    assert record['window_status'] == {'c10': {'status': 'unavailable', 'reason': 'no frames in the trace'}}
 
 
 def test_corece_and_halo_og_size_their_window_by_scale_and_halo_og_has_uncapped_stock_settings():
