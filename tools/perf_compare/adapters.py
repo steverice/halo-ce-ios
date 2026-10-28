@@ -283,6 +283,7 @@ def _native(target, scenario, out, config):
     # binaries, proven by the console lane); Chupathingy has no config.toml. Halo OG's documented `display.window_scale`
     # and `HALO_WINDOWED` (windowed Mac play) set its drawable like CoreCE's and VISR's.
     environment_port = target['id'] in ENV_CONSOLE_PORTS
+    text += ''.join(f'{key} = {value}\n' for key, value in config.get('debug_keys', {}).items())  # diagnostics only (e.g. gpu_stats = true)
     if target['id'] == 'chupathingy':
         text = ('[display]\nfullscreen = false\n[audio]\nenabled = false\n[network]\nonline = false\n[update]\nauto = false\n'
                 '[community_maps]\nauto_download = false\n'
