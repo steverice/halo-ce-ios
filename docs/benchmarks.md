@@ -28,7 +28,7 @@ config:
 ---
 xychart-beta horizontal
     title "Campaign: uncapped fps, M6 Mac mini"
-    x-axis "Port and version" ["VISR 0.6.1", "OpenCE v1.0.2", "CoreCE 0.3.0", "Chupathingy v0.8.0h", "Halo OG v0.5.1"]
+    x-axis "Port and version" ["VISR 0.6.1", "OpenCE-macOS v1.0.2", "CoreCE 0.3.0", "Chupathingy v0.8.0h", "Halo OG v0.5.1"]
     y-axis "Frames per second" 0 --> 500
     bar [364.7, 332.8, 244, 174.7, 95.8]
 ```

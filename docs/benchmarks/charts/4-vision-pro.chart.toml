@@ -41,6 +41,3 @@ master-chef = "Runs with no input, fixed at 30 fps as shipped; it has no setting
 frame_mode = ["capped", "display"]
 quality_preset = "defaults"
 status = "ok"
-
-[rename]
-"OpenCE-macOS" = "OpenCE"

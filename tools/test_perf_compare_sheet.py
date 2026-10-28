@@ -1060,3 +1060,17 @@ console.log(JSON.stringify(cases.map((c) => {
     done = subprocess.run(["node", "-e", script, str(ROOT)], capture_output=True, text=True, check=True, input=json.dumps(cases))
     expected = [list(_split(*[_suite_build(port, *suites) for port, *suites in case])) for case in cases]
     assert json.loads(done.stdout) == expected
+
+
+def test_chart_labels_use_the_same_port_names_as_the_builds_list():
+    rows = charts.load_snapshot(ROOT / "docs/benchmarks/results.csv")
+    for item in charts.load_specs(ROOT / "docs/benchmarks/charts"):
+        assert "rename" not in item, item["name"]
+        for suite in charts.SUITE_CHOICES:
+            built = charts.model(rows, item["query"], suite)
+            text = charts.source(item, built, suite)
+            for e in charts._drawn(built, None):
+                assert f'{e["port_name"]} {e["version"]}' in text, (item["name"], suite, e["label"])
+    mac = charts.source(charts.load_specs(ROOT / "docs/benchmarks/charts")[0], charts.model(rows, charts.load_specs(ROOT / "docs/benchmarks/charts")[0]["query"], "campaign"), "campaign")
+    assert "OpenCE-macOS v1.0.2" in mac and "OpenCE v1.0.2" not in mac
+    assert "OpenCE-macOS v1.0.2" in (ROOT / "docs/site/benchmarks/static-mac.svg").read_text()

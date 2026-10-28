@@ -37,6 +37,3 @@ no_data_reason = "no measurement at the display rate"
 frame_mode = "capped"
 quality_preset = "defaults"
 status = "ok"
-
-[rename]
-"OpenCE-macOS" = "OpenCE"

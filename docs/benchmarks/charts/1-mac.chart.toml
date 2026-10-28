@@ -49,6 +49,3 @@ frame_mode = "uncapped"
 drawable = "2560×1920"
 quality_preset = "matched-stock"
 status = "ok"
-
-[rename]
-"OpenCE-macOS" = "OpenCE"
