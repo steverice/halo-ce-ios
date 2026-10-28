@@ -666,15 +666,15 @@ def window_record(key, runs_extra=None, **extra):
 
 def test_new_windows_get_their_suite_kind_drawable_and_fingerprint_columns():
     fingerprint = {"kind": "battle", "end": {"(ai_living_count ext_a_area_a_cov)": "27"}}
-    rec = window_record("b40-exta", {"fingerprint": fingerprint, "cpu_ms_p50": 6.1, "gpu_ms_p50": 8.7})
+    rec = window_record("b40-exta", {"fingerprint": fingerprint, "cpu_p50_ms": 6.1})
     [row] = sheet_export.rows(summary(rec))
     assert (row["suite"], row["window"], row["window_kind"], row["drawable"]) == ("combat", "b40-exta", "battle", "2560×1920")
-    assert (row["cpu_ms_p50"], row["gpu_ms_p50"]) == ("6.10", "8.70")
+    assert row["cpu_p50_ms"] == "6.10"
     assert json.loads(row["fingerprint"]) == {"(ai_living_count ext_a_area_a_cov)": ["27", "27", "27"]}
     [cut] = sheet_export.rows(summary(window_record("x70-bridge")))
     assert (cut["suite"], cut["window_kind"]) == ("cutscenes", "cutscene")
     [old] = sheet_export.rows(summary(record()))
-    assert (old["suite"], old["window_kind"], old["drawable"], old["cpu_ms_p50"]) == ("campaign", "opening", "", "")
+    assert (old["suite"], old["window_kind"], old["drawable"], old["cpu_p50_ms"]) == ("campaign", "opening", "", "")
 
 
 def test_a_window_without_a_console_is_a_not_measured_row_with_its_reason():

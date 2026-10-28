@@ -162,8 +162,7 @@ def suite_section(rows: list[dict]) -> list[str]:
                   "separate; 1280×960 rows stay in the spreadsheet. "
                   if any(r.get("drawable") == "2560×1920" for r in rows) else "")
                  + "Device sets run the same windows through a hosted one-player game, with the console commands held "
-                 "until the level runs. Their `cpu_ms_p50` and `gpu_ms_p50` columns are VISR's own frame CPU and GPU "
-                 "medians, which show the work a window adds on a device where the CPU matters.", ""]
+                 "until the level runs. Their `cpu_p50_ms` column is VISR's own median frame CPU time, which shows the work a window adds on a device where the CPU matters.", ""]
     lines = ["### Suites", "",
              campaign + f"{state('campaign')}",
              *console_suites,

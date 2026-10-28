@@ -30,13 +30,13 @@ COLUMNS = (
     "resolution", "cap_fps", "display_hz", "rounds",
     "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms", "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct",
     "thermal", "status", "notes", "release_url", "gpu_p50_ms", "gpu_p90_ms",
-    "drawable", "window_kind", "cpu_ms_p50", "gpu_ms_p50", "fingerprint",
+    "drawable", "window_kind", "cpu_p50_ms", "fingerprint",
 )
 
 # Columns an older sheet or snapshot may lack; they read as empty.
-OPTIONAL = ("gpu_p50_ms", "gpu_p90_ms", "drawable", "window_kind", "cpu_ms_p50", "gpu_ms_p50", "fingerprint")
+OPTIONAL = ("gpu_p50_ms", "gpu_p90_ms", "drawable", "window_kind", "cpu_p50_ms", "fingerprint")
 
-NUMERIC = ("gpu_p50_ms", "gpu_p90_ms", "cpu_ms_p50", "gpu_ms_p50", "fingerprint", "resolution", "cap_fps", "display_hz", "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms",
+NUMERIC = ("gpu_p50_ms", "gpu_p90_ms", "cpu_p50_ms", "fingerprint", "resolution", "cap_fps", "display_hz", "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms",
            "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct", "thermal")
 
 # Where each port publishes a build: its release page (never a download), or the hosted page for a web build.
@@ -116,8 +116,7 @@ DESCRIPTIONS = {
     "notes": "Why a set is unavailable or incomplete, and any round whose end counts fall outside the other rounds' range.",
     "drawable": "Drawable size in pixels the Mac run was qualified at (1280×960, or 2560×1920 for the headline charts). Empty for devices and for rows from before this column.",
     "window_kind": "opening, battle, cutscene or bot: how the window is started and ended.",
-    "cpu_ms_p50": "Median frame CPU time in milliseconds, from VISR's own renderer line on devices; empty elsewhere.",
-    "gpu_ms_p50": "Median frame GPU time in milliseconds, from VISR's own renderer line on devices; empty elsewhere.",
+    "cpu_p50_ms": "Median frame CPU time in milliseconds, from VISR's own renderer line on devices; empty elsewhere.",
     "fingerprint": "JSON of the window's end reads per round (for example living enemy counts and game ticks); evidence that the workload was equivalent.",
 }
 
@@ -209,7 +208,7 @@ def rows(summary: dict) -> list[dict[str, str]]:
                     thermal=", ".join(sorted({str(run.get("thermal", "")) for run in valid})),
                     drawable=", ".join(sorted({str(run.get("drawable", "")) for run in valid} - {""})),
                 )
-                for column in ("cpu_ms_p50", "gpu_ms_p50"):
+                for column in ("cpu_p50_ms",):
                     values = [float(run[column]) for run in valid if run.get(column) not in (None, "")]
                     if len(values) == len(valid):
                         row[column] = _number(statistics.fmean(values))
