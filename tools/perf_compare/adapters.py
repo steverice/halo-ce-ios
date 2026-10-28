@@ -401,7 +401,7 @@ def _native(target, scenario, out, config):
             (out / 'window.json').write_text(json.dumps(outcome, indent=2))
             (out / 'console.txt').write_text(console.buf)
             extra = {'window_kind': window['kind'], 'fingerprint': outcome, 'reference_shot': window.get('reference_shot', '')}
-        return {'thermal': state['before']['state'] + ' → ' + thermal()['state'], 'drawable': drawable.replace('x', '×'),
+        return {'thermal': state['before']['state'] + ' → ' + thermal()['state'], 'drawable': target.get('drawable', drawable).replace('x', '×'),
                 **extra,
                 **qualification(target, scenario, config.get('display_hz', 60),
                                 config.get('frame_mode', 'capped'), config.get('native_delay_seconds', 0),

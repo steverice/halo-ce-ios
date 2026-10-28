@@ -351,7 +351,8 @@ def refresh(config, summary_path, page_path):
             record['quality_preset'] = config.get('quality_preset', 'defaults')
             record['warmup_seconds'] = config.get('warmup_seconds', 15)
             if target['id'] != 'opence-web':
-                record['drawable'] = config.get('drawable', '1280x960').replace('x', '×')
+                # A port that always renders at the display's full size names its own drawable.
+                record['drawable'] = target.get('drawable', config.get('drawable', '1280x960')).replace('x', '×')
             records[target['id']] = record
             if target.get('unavailable_reason') == 'safari-remote-automation-disabled':
                 record['reason'] = target['unavailable_reason']
@@ -406,7 +407,7 @@ def refresh(config, summary_path, page_path):
                         (folder / 'host-before.json').write_text(json.dumps(before))
                         adapter = adapters.safari if target['id'] == 'opence-web' else adapters.native
                         run_record = adapter(target, scenario, folder, config)
-                        if target['id'] != 'opence-web' and run_record.get('scene_verified') and run_record['resolution'] != config.get('drawable', '1280x960').replace('x', '×'):
+                        if target['id'] != 'opence-web' and run_record.get('scene_verified') and run_record['resolution'] != target.get('drawable', config.get('drawable', '1280x960')).replace('x', '×'):
                             raise RuntimeError('resolution-mismatch')
                         if target['id'] == 'opence-web':
                             intervals = parse_raf(json.loads((folder / 'raf.json').read_text())['timestamps'])
