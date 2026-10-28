@@ -173,7 +173,7 @@ def suite_section(rows: list[dict]) -> list[str]:
              "the match with no other humans. Bot input is paced from the wall clock, so runs on different ports, and "
              "repeated runs on one port, play equivalent workloads, not identical replays. "
              f"{state('multiplayer')}",
-             "- **Co-op:** local split-screen campaign co-op, two players. Enemy scaling is set explicitly to static 1x on every "
+             "- **Split-screen co-op:** local split-screen campaign co-op on one device, two players. Enemy scaling is set explicitly to static 1x on every "
              "port that has the option: VISR sets `debug.enemy_multiplier = 1`, and OpenCE-macOS and CoreCE set their "
              "enemies-per-player scaling to static 1x. A port without the option runs its own fixed behavior, and its notes "
              "column in the spreadsheet says so. A port without split screen shows "

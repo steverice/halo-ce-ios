@@ -35,7 +35,7 @@ windows = [
 ]
 
 [co-op]
-description = "Two-player split-screen campaign co-op with enemies at 1x."
+description = "Two-player split-screen campaign co-op on one device, with enemies at 1x. Online co-op is not measured."
 windows = [
   { label = "c10", shot = "coop-c10" },
   { label = "b30", shot = "coop-b30" },

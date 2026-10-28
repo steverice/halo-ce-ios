@@ -3,7 +3,7 @@
 "use strict";
 
 const SUITES = ["campaign", "combat", "cutscenes", "multiplayer", "co-op"];
-const SUITE_NAMES = { campaign: "Campaign", combat: "Combat", cutscenes: "Cutscenes", multiplayer: "Multiplayer", "co-op": "Co-op", overall: "Overall" };
+const SUITE_NAMES = { campaign: "Campaign", combat: "Combat", cutscenes: "Cutscenes", multiplayer: "Multiplayer", "co-op": "Split-screen co-op", overall: "Overall" };
 const DEFAULT_SUITE = "campaign";
 
 function parseCsv(text) {
@@ -318,7 +318,7 @@ function captionTable(built, selected, columns, windows) {
 function plainReason(reason, reasons) {
   if (Object.hasOwn(reasons.exact, reason)) return reasons.exact[reason];
   let match = /^no (.+) measurements yet$/.exec(reason);
-  if (match) return reasons.patterns.no_suite_data.replace("{suite}", match[1]);
+  if (match) return reasons.patterns.no_suite_data.replace("{suite}", (SUITE_NAMES[match[1]] || match[1]).toLowerCase());
   match = /^not measured in (.+?): (.+)$/.exec(reason);
   if (match) return reasons.patterns.partial_suite.replace("{suite}", match[1]).replace("{windows}", match[2]);
   match = /^missing (.+)$/.exec(reason);

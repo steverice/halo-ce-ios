@@ -499,7 +499,7 @@ def test_fetch_reads_columns_by_name_so_a_reordered_sheet_works():
 def test_reason_codes_become_plain_sentences_and_unknown_text_passes_through():
     reasons = charts.load_reasons()
     assert charts.plain_reason("safari-remote-automation-disabled", reasons) == "Safari could not be automated on this Mac."
-    assert charts.plain_reason("no co-op measurements yet", reasons) == "The co-op suite has not been run for this build."
+    assert charts.plain_reason("no co-op measurements yet", reasons) == "The split-screen co-op suite has not been run for this build."
     assert charts.plain_reason("missing multiplayer, co-op", reasons) == "No overall result: missing multiplayer, co-op."
     assert charts.plain_reason("Does not support split screen", reasons) == "Does not support split screen"
 
@@ -929,3 +929,12 @@ def test_platform_text_names_no_port_and_no_suite_windows():
         text = item["paragraph"]
         for word in ("Halo OG", "Chupathingy", "OpenGL", "master-chef", "Campaign", "Combat", "Cutscenes", "b30", "c10"):
             assert word not in text, (item["name"], word)
+
+
+def test_the_co_op_suite_is_named_split_screen_co_op_wherever_a_reader_sees_it():
+    assert charts.SUITE_NAMES["co-op"] == "Split-screen co-op"
+    html = (ROOT / "docs/site/benchmarks.html").read_text()
+    assert "Split-screen co-op</label>" in html and 'value="co-op"' in html
+    assert not re.search(r"(?<![-\w])Co-op(?!\w)", re.sub(r"<script.*?</script>", "", html, flags=re.S))
+    assert "Split-screen co-op is drawn flat" in html
+    assert "Split-screen co-op" in (ROOT / "docs/benchmarks.md").read_text()

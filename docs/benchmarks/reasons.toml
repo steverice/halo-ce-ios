@@ -14,7 +14,7 @@
 "the game reverted to a checkpoint in every round" = "The game reverted to a checkpoint in every round."
 "no console in the web build" = "The web build has no console a script can drive, so this suite cannot be started."
 "not reachable: no console" = "The app has no console a script can drive, so this suite cannot be started."
-"split screen has no stereo view on Vision Pro" = "Split screen is drawn flat, not in stereo, so the headset shows no presented frames for it: the game keeps its flat render path whenever there is more than one player window."
+"split screen has no stereo view on Vision Pro" = "Split-screen co-op is drawn flat, not in stereo, so the headset shows no presented frames for it: the game keeps its flat render path whenever there is more than one player window."
 "permission-denied" = "The system did not allow the measurement."
 
 [patterns]

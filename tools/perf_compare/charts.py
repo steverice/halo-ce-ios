@@ -27,7 +27,7 @@ END = "<!-- END CHARTS -->"
 SUITES = ("campaign", "combat", "cutscenes", "multiplayer", "co-op")
 SUITE_CHOICES = ("overall", *SUITES)
 SUITE_NAMES = {"campaign": "Campaign", "combat": "Combat", "cutscenes": "Cutscenes", "multiplayer": "Multiplayer",
-               "co-op": "Co-op", "overall": "Overall"}
+               "co-op": "Split-screen co-op", "overall": "Overall"}
 DEFAULT_SUITE = "campaign"
 
 
@@ -59,7 +59,7 @@ def plain_reason(reason: str, reasons: dict) -> str:
     if reason in reasons["exact"]:
         return reasons["exact"][reason]
     if reason.startswith("no ") and reason.endswith(" measurements yet"):
-        return reasons["patterns"]["no_suite_data"].format(suite=reason[3:-len(" measurements yet")])
+        return reasons["patterns"]["no_suite_data"].format(suite=SUITE_NAMES.get(reason[3:-len(" measurements yet")], reason[3:-len(" measurements yet")]).lower())
     match = re.fullmatch(r"not measured in (.+?): (.+)", reason)
     if match:
         return reasons["patterns"]["partial_suite"].format(suite=match[1], windows=match[2])
