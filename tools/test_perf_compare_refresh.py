@@ -488,3 +488,23 @@ def test_a_pinned_tag_selects_that_release_not_the_newest():
     releases = [{'tag_name': 'build-46', 'assets': [{'name': 'a.dmg'}]}, {'tag_name': 'build-44', 'assets': [{'name': 'a.dmg'}]}]
     assert m.select_release(releases, 'a.dmg')[0] == 'build-46'
     assert m.select_release([r for r in releases if r['tag_name'] == 'build-44'], 'a.dmg')[0] == 'build-44'
+
+
+def test_a_trace_without_frames_repeats_the_round_instead_of_ending_the_target(tmp_path, monkeypatch):
+    m = engine()
+    calls = []
+    monkeypatch.setattr(m, 'fetch', lambda *args: {'version': 'v1', 'sha256': 'a' * 64})
+    monkeypatch.setattr(m.adapters, 'host_state', lambda **kwargs: {})
+
+    def native(target, scenario, folder, config):
+        calls.append(scenario)
+        (folder / 'timeline.json').write_text(json.dumps({'pid': 1, 'traces': [[]]}))
+        return {'scene_verified': True, 'resolution': '1280×960', 'cap': 'unlimited'}
+    monkeypatch.setattr(m.adapters, 'native', native)
+    config = {'output': str(tmp_path / 'raw'), 'public_machine': 'Mac mini (M4)', 'windows': ['c10'], 'native_method': 'metalperftrace',
+              'targets': [{'id': 'visr'}]}
+    m.refresh(config, tmp_path / 'summary.json', tmp_path / 'page.md')
+    # three attempts at round 1 (the original and two repeats), then the target ends as unavailable
+    assert calls == ['c10'] * 3
+    [record] = json.loads((tmp_path / 'summary.json').read_text())['records']
+    assert [x['reason'] for x in record['rejected']] == ['no-intervals', 'no-intervals'] and record['status'] == 'unavailable'

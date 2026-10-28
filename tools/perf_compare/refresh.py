@@ -384,13 +384,16 @@ def refresh(config, summary_path, page_path):
                 if record['status'] == 'pending':
                     record.update(status='unavailable', reason=failure_code(error))
         targets = config['targets']
+        retries = {}
         for round_index in range(3):
             rotated = targets[round_index:] + targets[:round_index]
             for target in rotated:
                 record = records[target['id']]
                 if record['status'] == 'unavailable':
                     continue
-                for scenario in window_keys:
+                pending = list(window_keys)
+                while pending:
+                    scenario = pending.pop(0)
                     if record['status'] == 'unavailable':
                         break
                     win = window_table.get(scenario)
@@ -398,7 +401,8 @@ def refresh(config, summary_path, page_path):
                         record.setdefault('window_status', {})[scenario] = {
                             'status': 'not_measured', 'reason': 'no unattended console'}
                         continue
-                    folder = out / f'{target["id"]}-{scenario}-{round_index + 1}'
+                    tries = retries.get((target['id'], scenario, round_index), 0)
+                    folder = out / (f'{target["id"]}-{scenario}-{round_index + 1}' + (f'-retry{tries}' if tries else ''))
                     folder.mkdir()
                     print(f'Round {round_index + 1}: {target["id"]} {scenario} '
                           f'{config.get("frame_mode", "capped")} +{config.get("native_delay_seconds", 0)} s', flush=True)
@@ -446,6 +450,17 @@ def refresh(config, summary_path, page_path):
                         raise
                     except Exception as error:
                         record['reason'] = failure_code(error)
+                        key = (target['id'], scenario, round_index)
+                        if record['reason'] == 'no-intervals' and retries.get(key, 0) < 2:
+                            # A trace that holds no frames is a transient capture failure: the attempt is rejected and the round repeats.
+                            retries[key] = retries.get(key, 0) + 1
+                            record.setdefault('rejected', []).append(
+                                {'scenario': scenario, 'round': round_index + 1, 'reason': 'no-intervals'})
+                            record['reason'] = ''
+                            pending.insert(0, scenario)
+                            errors.append({'target': target['id'], 'scenario': scenario, 'round': round_index + 1,
+                                           'error': 'no-intervals (retrying)'})
+                            continue
                         if record['reason'] in {'console-unavailable', 'browser-game-setup-required', 'scene-unverified', 'no-intervals', 'host-not-quiet', 'display-locked', 'resolution-mismatch'}:
                             record['status'] = 'unavailable'
                         errors.append({'target': target['id'], 'scenario': scenario, 'round': round_index + 1,
