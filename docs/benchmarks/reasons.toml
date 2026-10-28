@@ -18,4 +18,4 @@
 # {suite} and {suites} are filled from the code.
 no_suite_data = "The {suite} suite has not been run for this build."
 missing_suites = "No overall result: missing {suites}."
-partial_suite = "Not drawn: the {suite} suite is only measured for part of its windows (missing {windows})."
+partial_suite = "The {suite} suite is only measured for part of its windows (missing {windows})."

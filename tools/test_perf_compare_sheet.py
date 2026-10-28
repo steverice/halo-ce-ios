@@ -241,7 +241,7 @@ def test_a_build_is_drawn_in_a_suite_only_with_every_window_of_that_suite():
     assert by["visr"]["value"] is not None
     assert by["opence-macos"]["value"] is None
     assert by["opence-macos"]["reason"] == "not measured in Combat: a50-hangar, b30-bot"
-    assert charts.plain_reason(by["opence-macos"]["reason"], charts.load_reasons()).startswith("Not drawn: the Combat suite")
+    assert charts.plain_reason(by["opence-macos"]["reason"], charts.load_reasons()).startswith("The Combat suite is only measured")
     full = charts.model(window_chart_rows(("a50-hangar", "b40-exta", "b30-bot")), query, "combat")
     assert all(e["value"] is not None for e in full["entries"] if e["port"] in ("visr", "opence-macos"))
     # Without the spec key, partial builds are charted from their windows, as the device charts do.
