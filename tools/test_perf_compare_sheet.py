@@ -202,7 +202,7 @@ def test_a_newest_version_without_data_stays_primary_and_the_ticked_build_sits_i
     group = charts.build_groups({"overall": False, "box": "", "entries": [measured, missing]})[0]
     assert group["primary"] is missing and group["others"] == [measured]
     html = site_page.builds_list({"entries": [measured, missing], "overall": False, "box": ""}, charts.load_reasons())
-    assert "<details class=\"older\" data-port=\"visr\" open>" in html
+    assert '<details class="older" data-port="visr"><summary>1 other version \u00b7 1 shown</summary>' in html and " open" not in html.split("<details")[1].split(">")[0]
 
 
 def test_a_port_with_no_measured_build_is_listed_once_by_its_newest_build():
@@ -973,3 +973,19 @@ def test_benchmark_platform_headings_carry_the_home_pages_icons_hidden_from_scre
         for icon, markup in zip(icons, glyphs):
             assert markup == (site / "icons/nav" / f"{icon}.svg").read_text().strip()
             assert markup in home
+
+
+def test_other_versions_stay_closed_and_the_summary_counts_the_ones_drawn():
+    rows = charts.load_snapshot(ROOT / "docs/benchmarks/results.csv")
+    reasons = charts.load_reasons()
+    for item in charts.load_specs(ROOT / "docs/benchmarks/charts"):
+        for suite in charts.SUITE_CHOICES:
+            built = charts.model(rows, item["query"], suite)
+            html = site_page.builds_list(built, reasons)
+            assert not re.search(r"<details class=\"older\"[^>]* open", html), (item["name"], suite)
+    built = charts.model(rows, charts.load_specs(ROOT / "docs/benchmarks/charts")[0]["query"], "combat")
+    everything = {charts.entry_key(e) for e in built["entries"]}
+    html = site_page.builds_list(built, reasons, everything)
+    assert re.search(r"<summary>\d+ other versions? \u00b7 \d+ shown</summary>", html)
+    script = (ROOT / "docs/site/benchmarks/benchmarks.js").read_text()
+    assert "more.open = state.open.has(id);" in script and "shown" in script

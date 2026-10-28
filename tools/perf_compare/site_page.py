@@ -128,8 +128,9 @@ def builds_list(built: dict, reasons: dict, selected: set[str] | None = None) ->
         parts.append('<div class="build-group">' + item(group["primary"]))
         if group["others"]:
             count = len(group["others"])
-            opened = " open" if any(e["default"] and charts.entry_key(e) not in status for e in group["others"]) else ""
-            parts.append(f'<details class="older" data-port="{escape(group["port"])}"{opened}><summary>{count} other version{"" if count == 1 else "s"}</summary>'
+            shown = sum(1 for e in group["others"] if charts.entry_key(e) not in status and (charts.entry_key(e) in selected if selected is not None else e["default"]))
+            label = f"{count} other version{'' if count == 1 else 's'}" + (f" \u00b7 {shown} shown" if shown else "")
+            parts.append(f'<details class="older" data-port="{escape(group["port"])}"><summary>{label}</summary>'
                          + "".join(item(e) for e in group["others"]) + "</details>")
         parts.append("</div>")
     return "".join(parts)

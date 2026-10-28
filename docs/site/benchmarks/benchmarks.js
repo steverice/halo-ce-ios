@@ -519,9 +519,11 @@ function drawList(list, spec, built, state) {
     if (group.others.length) {
       const count = group.others.length;
       const id = spec.slug + "/" + group.port;
+      // Closed unless the reader opened it; the summary says how many of the folded versions are drawn.
+      const shown = group.others.filter((e) => !status[entryKey(e)] && state.selected[spec.slug].has(entryKey(e))).length;
       const more = el("details", { class: "older", "data-port": group.port },
-        el("summary", {}, `${count} other version${count === 1 ? "" : "s"}`), ...group.others.map((e) => buildItem(e, spec, state, status[entryKey(e)])));
-      more.open = state.open.has(id) || group.others.some((e) => !status[entryKey(e)] && state.selected[spec.slug].has(entryKey(e)));
+        el("summary", {}, `${count} other version${count === 1 ? "" : "s"}` + (shown ? ` \u00b7 ${shown} shown` : "")), ...group.others.map((e) => buildItem(e, spec, state, status[entryKey(e)])));
+      more.open = state.open.has(id);
       more.addEventListener("toggle", () => { if (more.open) state.open.add(id); else state.open.delete(id); });
       box.append(more);
     }
