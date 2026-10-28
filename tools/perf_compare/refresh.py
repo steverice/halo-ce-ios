@@ -419,6 +419,8 @@ def refresh(config, summary_path, page_path):
                         if target['id'] == 'opence-web':
                             intervals = parse_raf(json.loads((folder / 'raf.json').read_text())['timestamps'])
                         elif adapters.timing_method(target, config) == 'glft':
+                            if not (folder / 'glft-intervals.json').exists():
+                                raise RuntimeError('no-intervals')  # the window never opened (a console that did not answer)
                             intervals = json.loads((folder / 'glft-intervals.json').read_text())['intervals_ms']
                         elif config.get('native_method') == 'metalperftrace':
                             intervals = parse_metal_trace(json.loads((folder / 'timeline.json').read_text()),

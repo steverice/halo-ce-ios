@@ -429,7 +429,7 @@ def _native(target, scenario, out, config):
                     if config.get('capture_windows'):
                         capture_window(process.pid, out / 'qualification-mid.png')
             console = consolewin.Console.attach(connection, console_text)
-            outcome = consolewin.run_window(window, console, SampleHooks, prints=target.get('console_prints', target['id'] != 'corece'))
+            outcome = consolewin.run_window(window, console, SampleHooks, prints=target.get('console_prints', target['id'] not in ('corece', 'chupathingy')))
             (out / 'window.json').write_text(json.dumps(outcome, indent=2))
             (out / 'console.txt').write_text(console.buf)
             extra = {'window_kind': window['kind'], 'fingerprint': outcome, 'reference_shot': window.get('reference_shot', '')}
