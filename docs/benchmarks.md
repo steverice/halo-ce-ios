@@ -2,7 +2,7 @@
 
 We try to make these comparisons fair, but our numbers or our setup for other projects may be wrong or out of date. Corrections? Updates? A new port or build we should add? [Open an issue](https://github.com/steverice/visr/issues)
 
-Last measured: 2026-10-27. The [results spreadsheet](https://docs.google.com/spreadsheets/d/1tuTJpOxUTbqgzOSDSW-nSvWKL8HkZMVucvNRUIee0t4) holds every number. The [interactive version](https://code.steverice.org/visr/benchmarks.html) adds suites and a choice of builds. The methodology is at the bottom of this page.
+Last measured: 2026-10-28. The [results spreadsheet](https://docs.google.com/spreadsheets/d/1tuTJpOxUTbqgzOSDSW-nSvWKL8HkZMVucvNRUIee0t4) holds every number. The [interactive version](https://code.steverice.org/visr/benchmarks.html) adds suites and a choice of builds. The methodology is at the bottom of this page.
 
 ## Results
 
@@ -12,7 +12,7 @@ Campaign suite, newest build of each port.
 
 ### Mac
 
-Average presentation rate, with the frame cap and vsync off and the matched-stock settings. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame.
+Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame.
 
 ```mermaid
 ---
@@ -26,18 +26,18 @@ config:
 ---
 xychart-beta horizontal
     title "Campaign: uncapped fps, M6 Mac mini"
-    x-axis "Port and version" ["VISR 0.6.0", "OpenCE v1.0.2", "CoreCE 0.3.0"]
-    y-axis "Frames per second" 0 --> 1000
-    bar [705, 620, 309.9]
+    x-axis "Port and version" ["VISR 0.6.1", "OpenCE v1.0.2", "CoreCE 0.3.0"]
+    y-axis "Frames per second" 0 --> 500
+    bar [364.7, 332.8, 244]
 ```
 
 🟦 Average fps
 
 Higher is better.
 
-M6 Mac mini. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; 0.48 ms median GPU time per rendered frame, 0.73 ms 90th-percentile GPU time per rendered frame); [OpenCE-macOS v1.0.2](https://github.com/channelramble/OpenCE-macOS/releases/tag/v1.0.2) (build 2, measured 2026-10-26; 0.55 ms median GPU time per rendered frame, 0.75 ms 90th-percentile GPU time per rendered frame); [CoreCE 0.3.0](https://github.com/mastercheese-dev/CoreCE/releases/tag/build-44) (build 44, measured 2026-10-26; 0.81 ms median GPU time per rendered frame, 1.11 ms 90th-percentile GPU time per rendered frame).
+M6 Mac mini. [VISR 0.6.1](https://github.com/steverice/visr/releases/tag/visr-v0.6.1) (build 20261027.174748, measured 2026-10-27; 4.15 ms median GPU time per rendered frame, 5.02 ms 90th-percentile GPU time per rendered frame); [OpenCE-macOS v1.0.2](https://github.com/channelramble/OpenCE-macOS/releases/tag/v1.0.2) (build 2, measured 2026-10-27; 5.17 ms median GPU time per rendered frame, 7.57 ms 90th-percentile GPU time per rendered frame); [CoreCE 0.3.0](https://github.com/mastercheese-dev/CoreCE/releases/tag/build-44) (build 44, measured 2026-10-28; 2.63 ms median GPU time per rendered frame, 3.38 ms 90th-percentile GPU time per rendered frame).
 
-Not measured: [OpenCE web build-280](https://halocombatevolved.com/) (Only measured with the frame cap on or with other settings.); [Chupathingy v0.8.0g](https://github.com/ChupathingyCE/chupathingyce/releases/tag/v0.8.0g) (The app has no frame-time readout we could capture.); [Halo OG v0.5.1](https://github.com/pfista/halo-og/releases/tag/v0.5.1) (The app has no frame-time readout we could capture.).
+Not measured: [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (Only measured with the frame cap on, at another size or with other settings.); [VISR 0.5.1](https://github.com/steverice/visr/releases/tag/visr-v0.5.1) (Only measured with the frame cap on, at another size or with other settings.); [OpenCE web build-280](https://halocombatevolved.com/) (Only measured with the frame cap on, at another size or with other settings.); [Chupathingy v0.8.0g](https://github.com/ChupathingyCE/chupathingyce/releases/tag/v0.8.0g) (The app has no frame-time readout we could capture.); [Halo OG v0.5.1](https://github.com/pfista/halo-og/releases/tag/v0.5.1) (The app has no frame-time readout we could capture.).
 
 ### iPhone and iPad
 
@@ -129,7 +129,7 @@ M2 Vision Pro. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-
 
 ## Methodology
 
-The snapshot holds 57 measured windows for 7 ports on 4 platforms (Mac, iPhone/iPad, Apple TV, Vision Pro). Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.
+The snapshot holds 98 measured windows for 7 ports on 4 platforms (Mac, iPhone/iPad, Apple TV, Vision Pro). Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.
 
 ### Timing by platform
 
@@ -149,12 +149,16 @@ Uncapped charts show average fps and GPU time per rendered frame, not 1% low rat
 
 ### Suites
 
-- **Campaign:** every measured window: the opening of a10, the opening of b30, and the b30 beach encounter 90 seconds later (`b30 +90 s`). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set. A set with fewer than three valid rounds is marked incomplete. Measured on 7 ports: VISR, OpenCE-macOS, OpenCE web, CoreCE, master-chef, Beeman, ChupathingyCE iOS.
+- **Campaign:** the openings of c10 (343 Guilty Spark) and b30 (The Silent Cartographer). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set. A set with fewer than three valid rounds is marked incomplete. Earlier sets used the a10 opening and a b30 window 90 seconds later (`b30 +90 s`); those rows stay in the spreadsheet. Measured on 7 ports: VISR, OpenCE-macOS, OpenCE web, CoreCE, master-chef, Beeman, ChupathingyCE iOS.
+- **Combat:** the player is made deathless and placed in a battle from the game console: the a50 hangar (`switch_bsp`, `object_teleport`, `ai_place` for the Covenant floors and the Marines, `ai_magically_see_encounter` and `ai_magically_see_players` so the sides engage at once) and Exterior A of b40 (the same commands), each sampled for 60 seconds after a 15-second warm-up, plus the b30 bot window: the scripted bot player for 1,800 game ticks (60 seconds of game time) from tick 900. Battles and the bot window are equivalent workloads, not replays: the AI's outcome differs by a few actors between runs, so each round's end counts (`ai_living_count`, player health, ticks) are kept in the `fingerprint` column and a round outside the other rounds' range is flagged in `notes`. A round is rejected when an encounter was not placed, the game reloaded a checkpoint, or the bot did not cover its ticks or throw a grenade. A port with no unattended console shows the status `not_measured`. Measured on 3 ports: VISR, OpenCE-macOS, CoreCE.
+- **Cutscenes:** two whole in-engine cutscenes called from the console, `x70_bridge` on d40 and `cutscene_rescue` on a50, sampled from the call to the script's `print`. Their length is set by the game's ticks, so it is the same on every port. A round is rejected when the print does not arrive within 1.5 times the expected length or the sample covers less than 95% of it. Measured on 3 ports: VISR, OpenCE-macOS, CoreCE.
 - **Multiplayer:** a hosted Slayer match on Chill Out and one on Blood Gulch, each a sampling window; the suite value is the mean over both maps' windows. One local player, driven by the scripted bot input, hosts and starts the match with no other humans. Bot input is paced from the wall clock, so runs on different ports, and repeated runs on one port, play equivalent workloads, not identical replays. No measurements yet.
 - **Co-op:** local split-screen campaign co-op, two players. Enemy scaling is set explicitly to static 1x on every port that has the option: VISR sets `debug.enemy_multiplier = 1`, and OpenCE-macOS and CoreCE set their enemies-per-player scaling to static 1x. A port without the option runs its own fixed behavior, and its notes column in the spreadsheet says so. A port without split screen shows "Does not support split screen" and the status `not_supported`; that differs from "not measured", which means the suite has not been run for the build. No measurements yet.
 - **Overall:** per build, the geometric mean of the suites' average rates and the geometric mean of their 1% low rates, each suite weighted equally, so every suite counts the same whatever its frame-rate scale. Each chart uses the suites that every build drawn in it has measured, so its bars stay comparable; the caption names them. Ticking or unticking a build can change which suites a chart covers.
 
-A round is rejected when the outside-process CPU average rises more than half a core above the baseline taken before the window. Each round allows three attempts. Rejected attempts appear in the spreadsheet with the status `rejected` and their reason. This snapshot has 0 rejected attempts.
+Mac charts use a 2560×1920 drawable (a 1280×960-point window at 2×), where the ports' frame times separate; 1280×960 rows stay in the spreadsheet. Device sets run the same windows through a hosted one-player game, with the console commands held until the level runs. Their `cpu_p50_ms` column is VISR's own median frame CPU time, which shows the work a window adds on a device where the CPU matters.
+
+A round is rejected when the outside-process CPU average rises more than half a core above the baseline taken before the window. Each round allows three attempts. Rejected attempts appear in the spreadsheet with the status `rejected` and their reason. This snapshot has 2 rejected attempts (no-intervals; inverted look and sensitivity 5 not applied).
 
 Suite definitions and the harness are in [`tools/perf_compare`](https://github.com/steverice/visr/blob/main/tools/perf_compare) ([`adapters.py`](https://github.com/steverice/visr/blob/main/tools/perf_compare/adapters.py), [`refresh.py`](https://github.com/steverice/visr/blob/main/tools/perf_compare/refresh.py)).
 

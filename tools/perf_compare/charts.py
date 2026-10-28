@@ -305,7 +305,8 @@ def caption_parts(built: dict, selected: set[str] | None = None, columns: list[s
     if not drawn:
         return []
     columns = columns or []
-    windows = windows or []
+    # With no windows listed in the spec, a build that lacks a window another drawn build has is flagged.
+    windows = windows or sorted({name for e in drawn for name in (e["value"].get("windows") or [])})
     note = overall_note(built, selected)
     parts = [(f"{built['box']}. " + (note + " " if note else ""), "")]
     for index, e in enumerate(drawn):

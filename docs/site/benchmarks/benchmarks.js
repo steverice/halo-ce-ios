@@ -207,6 +207,8 @@ function captionParts(built, selected, columns, windows) {
   const shown = drawn(built, selected);
   if (!shown.length) return [];
   columns = columns || [];
+  // With no windows listed in the spec, a build that lacks a window another drawn build has is flagged.
+  if (!windows || !windows.length) windows = [...new Set(shown.flatMap((e) => e.value.windows || []))].sort();
   const note = overallNote(built, selected);
   const parts = [[`${built.box}. ` + (note ? note + " " : ""), ""]];
   shown.forEach((e, i) => {
