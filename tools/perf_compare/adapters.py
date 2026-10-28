@@ -193,7 +193,7 @@ def timing_method(target, config):
     if target['id'] in GLFT_PORTS:
         return 'glft'
     base = config.get('native_method', 'hud')
-    # A repeat of a window whose `metalperftrace` capture held no per-frame timeline (g-force, bot windows): time the
+    # A repeat of a window whose `metalperftrace` capture held no per-frame timeline: time the
     # Metal ports at `CAMetalLayer nextDrawable` with the same shim, which gave the same average rate to the digit.
     return 'glft-metal' if base == 'metalperftrace' and config.get('metal_swap_shim') else base
 DRAWABLES = {'1280x960': (640, 480), '2560x1920': (1280, 960)}
