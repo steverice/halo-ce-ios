@@ -297,7 +297,7 @@ def method_group(record):
 
 CAVEAT = ("We try to make these comparisons fair, but numbers or projects may be wrong or out of date. "
           "Corrections? Updates? A new port or build we should add? "
-          "[Open an issue](https://github.com/steverice/visr/issues)")
+          "[Open an issue](https://github.com/steverice/visr/issues/new?template=benchmark.yml)")
 
 METHOD_NOTES = {
     "trace": "Apple's metalperftrace records per-frame on-glass drawable intervals. "

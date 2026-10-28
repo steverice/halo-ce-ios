@@ -1,6 +1,6 @@
 # Performance benchmarks
 
-We try to make these comparisons fair, but numbers or projects may be wrong or out of date. Corrections? Updates? A new port or build we should add? [Open an issue](https://github.com/steverice/visr/issues)
+We try to make these comparisons fair, but numbers or projects may be wrong or out of date. Corrections? Updates? A new port or build we should add? [Open an issue](https://github.com/steverice/visr/issues/new?template=benchmark.yml)
 
 Last measured: 2026-10-28.
 

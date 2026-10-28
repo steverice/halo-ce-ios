@@ -1,0 +1,55 @@
+name: Benchmark correction or addition
+description: A number on the benchmarks page is wrong or out of date, or a port or build is missing
+labels: [benchmarks]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [benchmarks page](https://code.steverice.org/visr/benchmarks.html) and its [results spreadsheet](https://docs.google.com/spreadsheets/d/1tuTJpOxUTbqgzOSDSW-nSvWKL8HkZMVucvNRUIee0t4) compare released builds of Halo: Combat Evolved ports on Apple devices. Measurements of your own are welcome, but numbers on the page come from our runs.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is this about?
+      options:
+        - A number or note looks wrong
+        - A port has a newer release
+        - A port or build we should add
+        - The method or a suite
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: port
+    attributes:
+      label: Port and version
+      placeholder: Chupathingy 0.8.1c
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Where to get it
+      description: The release page, download, or repository for this build.
+      placeholder: https://github.com/...
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: true
+      options:
+        - Mac
+        - iPhone or iPad
+        - Apple TV
+        - Apple Vision Pro
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What is wrong or missing, which chart or suite it affects, and what you expected. For a new port, say how it is installed and whether it can load a level from the command line or a console.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Your measurements or sources
+      description: Optional. Your device, settings and results, or a link to release notes.
