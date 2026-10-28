@@ -55,15 +55,6 @@ body:
       options:
         - NTSC-US (01.10.12.2276)
         - PAL (01.01.14.2342)
-  - type: dropdown
-    id: renderer
-    attributes:
-      label: Renderer
-      description: "`display.renderer` in `config.toml`"
-      options:
-        - Metal (default)
-        - OpenGL ES
-        - Not sure
   - type: textarea
     id: logs
     attributes:
