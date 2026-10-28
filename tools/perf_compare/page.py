@@ -234,7 +234,8 @@ def render_page(summary: dict, rows: list[dict], specs: list[dict]) -> str:
         raise ValueError("summary schema mismatch")
     records = sorted(summary.get("records", []), key=_record_order)
     lines = ["# Performance benchmarks", "", CAVEAT, "",
-             f"Last measured: {last_measured(summary, rows)}. The [results spreadsheet]({SHEET_URL}) holds every number. "
+             f"Last measured: {last_measured(summary, rows)}.", "",
+             f"The [results spreadsheet]({SHEET_URL}) holds every number. "
              f"The [interactive version]({SITE_PAGE_URL}) adds suites and a choice of builds. The methodology is at the bottom "
              "of this page.", "",
              "## Results", "", "Campaign suite, newest build of each port.", "", charts.BEGIN, "",

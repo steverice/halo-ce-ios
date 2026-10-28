@@ -179,7 +179,7 @@ def render_site_page(summary: dict, rows: list[dict], specs: list[dict], legal_h
     suites = "".join(
         f'<label><input type="radio" name="suite" value="{name}"{" checked" if name == charts.DEFAULT_SUITE else ""}> '
         f"{charts.SUITE_NAMES[name]}</label>" for name in charts.SUITE_CHOICES)
-    intro = md.render(f"{CAVEAT}\n\nLast measured: {last_measured(summary, rows)}. The "
+    intro = md.render(f"{CAVEAT}\n\nLast measured: {last_measured(summary, rows)}.\n\nThe "
                       f"[results spreadsheet]({SHEET_URL}) holds every number. The methodology is at the bottom of this page.")
     panels = "".join(suite_info(name, info[name]) for name in charts.SUITE_CHOICES)
     method = md.render("\n".join(methodology(summary, rows)))
