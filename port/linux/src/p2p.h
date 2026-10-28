@@ -255,6 +255,18 @@ struct p2p_listing
 	unsigned char signing_key[P2P_LISTING_SIGNING_KEY_SIZE];
 	unsigned char sealed_token[P2P_LISTING_SEALED_TOKEN_SIZE];
 };
+/* The kind of host a listing came from, as far as its fields say. Unknown
+is a listing nothing reliably identifies; the browser leaves its row as it
+was. A broker listing is OpenCE's or VISR's (no field tells them apart). */
+enum p2p_server_kind
+{
+	P2P_SERVER_UNKNOWN,
+	P2P_SERVER_DEDICATED,
+	P2P_SERVER_PLAYER,
+	P2P_SERVER_DELTA,
+	P2P_SERVER_LAN
+};
+enum p2p_server_kind p2p_listing_server_kind(const struct p2p_listing *listing);
 /* a copy of the public games found, in the order shown (those this build
 can join first, then the most players; then those not failed, the open
 ones, by name); returns their count */

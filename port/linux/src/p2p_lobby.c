@@ -1104,6 +1104,21 @@ int p2p_lobby_browsing(void)
 	return lobby.browsing;
 }
 
+/* Dedicated wins: the master list and the dedicated flag name OpenCE's
+dedicated servers. Delta's list is next (from_delta; its rows carry no
+dedicated flag). What is left came signed over the brokers from a host with
+a player of its own. */
+enum p2p_server_kind p2p_listing_server_kind(const struct p2p_listing *listing)
+{
+	if (!listing)
+		return P2P_SERVER_UNKNOWN;
+	if (listing->from_master || listing->dedicated)
+		return P2P_SERVER_DEDICATED;
+	if (listing->from_delta)
+		return P2P_SERVER_DELTA;
+	return P2P_SERVER_PLAYER;
+}
+
 /* Dedicated games first, then the existing joinability, player and name order. */
 static int listing_order(const void *first, const void *second)
 {

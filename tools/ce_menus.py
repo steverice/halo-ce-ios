@@ -93,6 +93,8 @@ CHILD_OFFSETS = {
        for list_tag in ("multiplayer_type_select\\mp_map_select\\mp_map_select_list_2",
                         "solo_level_select\\solo_level_select_list")},
 }
+# the frames of the browser's kind icon: dedicated, player-hosted, Delta, LAN
+SERVER_KIND_ICONS = ["dedicated.svg", "player_hosted.svg", "delta_listed.svg", "lan_game.svg"]
 SCALE = 4
 MAXIMUM_SIZE = 2048
 # the PC fonts this engine's map lacks, and the font drawn instead
@@ -380,11 +382,12 @@ class Art:
     def draw(self, relative: str, index: int, count: int, width: int, height: int, output: Path,
              shown: list) -> None:
         output.parent.mkdir(parents=True, exist_ok=True)
-        # The shared browser uses VISR's rack drawing in every animation frame.
+        # The shared browser's kind icon: frame 0 is VISR's rack (dedicated),
+        # then a player, Delta's triangle and a LAN (join_game/server kinds).
         if relative == "shell/main_menu/multiplayer_type_select/join_game/dedicated_icon":
             svg = SVG_COPIES / f"{relative}__{index}.svg"
             svg.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(MENUS / "originals/dedicated.svg", svg)
+            shutil.copy2(MENUS / "originals" / SERVER_KIND_ICONS[min(index, len(SERVER_KIND_ICONS) - 1)], svg)
             self.svgs.append(svg)
             Image.fromarray(bleed(render_svg(svg, SCALE)), "RGBA").save(output, optimize=True)
             return

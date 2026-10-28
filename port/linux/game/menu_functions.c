@@ -3423,6 +3423,35 @@ static boolean advertised_dedicated(struct advertised_game *game)
 	return network_game_client_advertised_game_dedicated(global_network_game_client_get(), game);
 }
 
+/* The kind icon's frame (join_game/dedicated_icon: 0 dedicated, 1 player-hosted,
+2 Delta-listed, 3 LAN) and the line the chosen row shows for it; a kind
+nothing identifies has neither. */
+static int server_kind_frame(enum p2p_server_kind kind)
+{
+	return kind == P2P_SERVER_PLAYER ? 1 : kind == P2P_SERVER_DELTA ? 2 : kind == P2P_SERVER_LAN ? 3 : 0;
+}
+
+static wchar_t const *server_kind_text(enum p2p_server_kind kind)
+{
+	switch (kind)
+	{
+	case P2P_SERVER_DEDICATED: return L"Dedicated server";
+	case P2P_SERVER_PLAYER: return L"Player-hosted game";
+	case P2P_SERVER_DELTA: return L"Listed by Delta";
+	case P2P_SERVER_LAN: return L"LAN game";
+	default: return L"";
+	}
+}
+
+static void server_kind_icon_set(struct widget_instance *row, enum p2p_server_kind kind)
+{
+	struct widget_instance *icon = named(row, "server_item_dedicated", 0);
+
+	visible_set(icon, kind != P2P_SERVER_UNKNOWN);
+	if (icon)
+		icon->animation.current_frame_index = (short)server_kind_frame(kind);
+}
+
 static void browser_dedicated_first(void)
 {
 	short index, first = 0;
@@ -3980,7 +4009,7 @@ static void lobby_browser_update(struct widget_instance *list)
 			if (lock)
 				lock->animation.current_frame_index = 1;
 		}
-		visible_set(named(row, "server_item_dedicated", 0), game->dedicated);
+		server_kind_icon_set(row, p2p_listing_server_kind(game));
 		visible_set(named(row, "server_item_classic", 0), FALSE);
 	}
 	/* joining: once the host is reached, its game joined (by an A press, on
@@ -4097,12 +4126,15 @@ static void lobby_browser_update(struct widget_instance *list)
 			text[0] = 0;
 		text[NUMBEROF(text) - 1] = 0;
 		text_set(named(list, "ticker_player_info", 0), text);
-		if (chosen < lobby_browser.count && lobby_browser.games[chosen].from_master)
+		if (chosen < lobby_browser.count)
 		{
+			struct p2p_listing const *shown = &lobby_browser.games[chosen];
 			wchar_t region[32];
 
-			text_to_wide(lobby_browser.games[chosen].region, region, NUMBEROF(region));
-			usnprintf(text, NUMBEROF(text) - 1, L"Master-listed%s%s", region[0] ? L": " : L"", region);
+			text_to_wide(shown->region, region, NUMBEROF(region));
+			usnprintf(text, NUMBEROF(text) - 1, L"%s%s%s%s", server_kind_text(p2p_listing_server_kind(shown)),
+				shown->from_master ? L", master-listed" : L"", shown->from_master && region[0] ? L": " : L"",
+				shown->from_master ? region : L"");
 			text[NUMBEROF(text) - 1] = 0;
 			text_set(named(list, "ticker_rules_info", 0), text);
 		}
@@ -4363,7 +4395,9 @@ static void browser_update(struct widget_instance *list)
 			text_set(named(row, "server_item_ping", 0), advertised_in_progress(game) ? L"LIVE" :
 				player_capacity_marked(game->player_count, game->maximum_player_count) ? L"BIG" : L"");
 		visible_set(named(row, "server_item_locked", 0), FALSE);
-		visible_set(named(row, "server_item_dedicated", 0), advertised_dedicated(game));
+		server_kind_icon_set(row, multiplayer.mode == _multiplayer_mode_lan ?
+			(advertised_dedicated(game) ? P2P_SERVER_DEDICATED : P2P_SERVER_LAN) :
+			advertised_dedicated(game) ? P2P_SERVER_DEDICATED : P2P_SERVER_UNKNOWN);
 		visible_set(named(row, "server_item_classic", 0), FALSE);
 	}
 	{

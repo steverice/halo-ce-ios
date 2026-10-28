@@ -1,9 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <!-- VISR's two-unit server rack, drawn for the shared engine browser. -->
-  <g fill="none" stroke="#2896ff" stroke-width="1.2">
-    <rect x="2.5" y="3" width="11" height="4" rx="0.6"/>
-    <rect x="2.5" y="9" width="11" height="4" rx="0.6"/>
-    <path d="M7 5h4M7 11h4"/>
+  <!-- A player-hosted game: one player's head and shoulders. -->
+  <g fill="none" stroke="#2896ff" stroke-width="1.2" stroke-linejoin="round">
+    <circle cx="8" cy="5.2" r="2.4"/>
+    <path d="M3 13.5c0-3 2.2-4.8 5-4.8s5 1.8 5 4.8z"/>
   </g>
-  <g fill="#2896ff"><circle cx="4.5" cy="5" r="0.65"/><circle cx="4.5" cy="11" r="0.65"/></g>
 </svg>

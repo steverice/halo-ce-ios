@@ -17,7 +17,8 @@ typedef int boolean;
 #define NUMBEROF(a) (sizeof(a) / sizeof((a)[0]))
 #define ustrncpy wcsncpy
 struct advertised_game { wchar_t game_name[16]; int engine_type, player_count, maximum_player_count; };
-struct widget_instance { wchar_t text[96]; char const *name; struct widget_instance *parent; };
+enum p2p_server_kind { P2P_SERVER_UNKNOWN, P2P_SERVER_DEDICATED, P2P_SERVER_PLAYER, P2P_SERVER_DELTA, P2P_SERVER_LAN };
+struct widget_instance { wchar_t text[96]; char const *name; struct widget_instance *parent; struct { short current_frame_index; } animation; };
 static struct { struct advertised_game *games[1]; int mode, game_count; } multiplayer;
 static struct { int count, first; struct { int joinable; } games[3]; } lobby_browser;
 static struct widget_instance type, ping, dedicated_icon, other;
@@ -87,9 +88,10 @@ int main(void)
 	multiplayer.mode = _multiplayer_mode_lan;
 	multiplayer.game_count = 1;
 	render_row(); assert(!wcscmp(type.text, L"SLAYER"));
-	assert(!dedicated_visible);
-	dedicated = 1; render_row(); assert(dedicated_visible);
-	dedicated = 0; render_row(); assert(!dedicated_visible);
+	/* a system link row is a LAN game (frame 3) unless dedicated (frame 0) */
+	assert(dedicated_visible && dedicated_icon.animation.current_frame_index == 3);
+	dedicated = 1; render_row(); assert(dedicated_visible && dedicated_icon.animation.current_frame_index == 0);
+	dedicated = 0; render_row(); assert(dedicated_visible && dedicated_icon.animation.current_frame_index == 3);
 	kind = 1; render_row(); assert(!wcscmp(type.text, L"SWAT"));
 	kind = 2; render_row(); assert(!wcscmp(type.text, L"INFECTION"));
 	kind = 3; render_row(); assert(!wcscmp(type.text, L"GUN GAME"));

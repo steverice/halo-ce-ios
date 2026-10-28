@@ -76,8 +76,10 @@ def test_dedicated_art_regenerates_from_empty_output(tmp_path):
     import shutil
 
     source = ROOT / 'port/assets/menus/originals/dedicated.svg'
-    expected = (ROOT / 'port/assets/menus/svg/shell/main_menu/multiplayer_type_select/'
-                'join_game/dedicated_icon__0.svg').read_bytes()
+    icons = ['dedicated.svg', 'player_hosted.svg', 'delta_listed.svg', 'lan_game.svg']
+    expected_by_frame = [(ROOT / 'port/assets/menus/originals' / name).read_bytes() for name in icons]
+    assert len(set(expected_by_frame)) == 4
+    expected = expected_by_frame[0]
     copies = tmp_path / 'svg'
     copies.mkdir()
     relative = 'shell/main_menu/multiplayer_type_select/join_game/dedicated_icon'
@@ -99,12 +101,12 @@ def test_dedicated_art_regenerates_from_empty_output(tmp_path):
             path.write_bytes(png)
 
     def render(svg, scale):
-        assert svg.read_bytes() == expected
+        assert svg.read_bytes() == expected_by_frame[len(emitted)]
         assert scale == 4
         emitted.append(svg)
         return [[[40, 150, 255, 255]]]
 
-    namespace = {'Path': Path, 'shutil': shutil, 'SVG_COPIES': copies,
+    namespace = {'Path': Path, 'shutil': shutil, 'SVG_COPIES': copies, 'SERVER_KIND_ICONS': icons,
                  'MENUS': ROOT / 'port/assets/menus', 'SCALE': 4,
                  'Image': ImageStub, 'bleed': lambda pixels: pixels, 'render_svg': render}
     exec(compile(ast.Module(body=[draw], type_ignores=[]), '<Art.draw>', 'exec'), namespace)
@@ -113,6 +115,37 @@ def test_dedicated_art_regenerates_from_empty_output(tmp_path):
         output = tmp_path / 'png' / f'dedicated_icon__{index}.png'
         namespace['draw'](instance, relative, index, 4, 16, 16, output, [])
         assert output.read_bytes() == png
-        assert (copies / f'{relative}__{index}.svg').read_bytes() == expected
+        assert (copies / f'{relative}__{index}.svg').read_bytes() == expected_by_frame[index]
     assert len(emitted) == 4 and instance.svgs == emitted
     assert source.read_bytes() == expected
+
+
+def test_server_kind_classification_and_icon_frames(tmp_path):
+    menu = (ROOT / 'port/linux/game/menu_functions.c').read_text()
+    lobby = (ROOT / 'port/linux/src/p2p_lobby.c').read_text()
+    production = function(lobby, 'enum p2p_server_kind p2p_listing_server_kind(')
+    production += '\n' + function(menu, 'static int server_kind_frame(')
+    fixture = r'''
+#include <assert.h>
+#include <stddef.h>
+#include "p2p.h"
+/* PRODUCTION */
+int main(void) {
+    struct p2p_listing player = {0}, dedicated = {.dedicated=1}, master = {.from_master=1},
+        delta = {.from_delta=1}, delta_dedicated_flag = {.from_delta=1, .dedicated=1};
+    assert(p2p_listing_server_kind(&player) == P2P_SERVER_PLAYER);
+    assert(p2p_listing_server_kind(&dedicated) == P2P_SERVER_DEDICATED);
+    assert(p2p_listing_server_kind(&master) == P2P_SERVER_DEDICATED);
+    assert(p2p_listing_server_kind(&delta) == P2P_SERVER_DELTA);
+    assert(p2p_listing_server_kind(&delta_dedicated_flag) == P2P_SERVER_DEDICATED);
+    assert(p2p_listing_server_kind(NULL) == P2P_SERVER_UNKNOWN);
+    assert(server_kind_frame(P2P_SERVER_DEDICATED) == 0 && server_kind_frame(P2P_SERVER_PLAYER) == 1);
+    assert(server_kind_frame(P2P_SERVER_DELTA) == 2 && server_kind_frame(P2P_SERVER_LAN) == 3);
+    return 0;
+}
+'''
+    probe, binary = tmp_path / 'kind.c', tmp_path / 'kind'
+    probe.write_text(fixture.replace('/* PRODUCTION */', production))
+    subprocess.run(['clang', '-std=c11', '-Wall', '-Werror', '-iquote',
+                    str(ROOT / 'port/linux/src'), str(probe), '--output=' + str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)
