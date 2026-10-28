@@ -562,3 +562,12 @@ def test_a_one_percent_low_above_the_average_is_drawn_at_the_average():
     average = text.split("    bar [")[1].split("]")[0]
     low = text.split("    bar [")[2].split("]")[0]
     assert low == average
+
+
+def test_last_measured_is_the_newest_date_among_the_summary_and_every_row():
+    from perf_compare.page import last_measured
+    rows = snapshot_rows()
+    assert last_measured({"records": [{"date": "2026-10-26"}]}, []) == "2026-10-26"
+    assert last_measured({"records": [{"date": "2026-10-26"}]}, [{**rows[0], "date": "2026-10-27"}]) == "2026-10-27"
+    assert last_measured({}, [{**rows[0], "date": "2026-10-24"}, {**rows[0], "date": "2026-10-25"}]) == "2026-10-25"
+    assert last_measured({}, []) == "unknown"

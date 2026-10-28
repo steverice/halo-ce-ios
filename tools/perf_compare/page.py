@@ -182,14 +182,20 @@ def methodology(summary: dict, rows: list[dict]) -> list[str]:
     return lines
 
 
+def last_measured(summary: dict, rows: list[dict]) -> str:
+    """The newest date among the summary's records and every row the page shows, or "unknown"."""
+    dates = [str(r["date"]) for r in summary.get("records", []) if r.get("date")]
+    dates += [str(r["date"]) for r in rows if r.get("date")]
+    return max(dates) if dates else "unknown"
+
+
 def render_page(summary: dict, rows: list[dict], specs: list[dict]) -> str:
     """Deterministic page text from the public summary, the results snapshot and the chart specs."""
     if summary and summary.get("schema") != SCHEMA:
         raise ValueError("summary schema mismatch")
     records = sorted(summary.get("records", []), key=_record_order)
-    dates = sorted(str(r["date"]) for r in records if r.get("date"))
     lines = ["# Performance benchmarks", "", CAVEAT, "",
-             f"Last measured: {dates[-1] if dates else 'unknown'}. The [results spreadsheet]({SHEET_URL}) holds every number. "
+             f"Last measured: {last_measured(summary, rows)}. The [results spreadsheet]({SHEET_URL}) holds every number. "
              f"The [interactive version]({SITE_PAGE_URL}) adds suites and a choice of builds. The methodology is at the bottom "
              "of this page.", "",
              "## Results", "", "Campaign suite, newest build of each port.", "", charts.BEGIN, "",
