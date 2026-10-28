@@ -10,6 +10,8 @@
 "not measured yet" = "Not run on this device yet."
 "no unattended console" = "This port has no way to start this suite without a person at the keyboard."
 "no frames in the trace" = "The timing trace held no frames for this window."
+"engine assertion (terminal.c:413)" = "The game halts on an engine assertion during this window."
+"the game reverted to a checkpoint in every round" = "The game reverted to a checkpoint in every round."
 "permission-denied" = "The system did not allow the measurement."
 
 [patterns]

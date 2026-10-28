@@ -90,10 +90,10 @@ def device_section(rows: list[dict]) -> list[str]:
                       "uses the uncapped, matched-stock runs described below.", ""])
     og = [row for row in ok if row["port"] == "halo-og"]
     if og:
-        sizes = sorted({row["resolution"] for row in og if row["resolution"]})
-        lines.extend([f"Halo OG always renders at the display's full size ({'/'.join(sizes) or 'unknown'} drawable on the "
-                      f"{og[0]['host']}), so it draws more pixels than the 1280×960 native runs. It also lacks several settings "
-                      f"the other ports expose, among them {OG_SETTINGS}; its rows use its defaults.", ""])
+        lines.extend(["Halo OG's frame rate is limited by its CPU command submission, not by a frame cap: its uncapped settings "
+                      "are in force (the frame limit is 0 and vsync is off), its GPU is about half idle, and its rate does not change "
+                      f"with the drawable size. It lacks several settings the other ports expose, among them {OG_SETTINGS}; its rows "
+                      "use its defaults.", ""])
     return lines
 
 

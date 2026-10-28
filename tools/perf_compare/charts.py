@@ -177,7 +177,12 @@ def covered_suites(pool: list[dict]) -> list[str]:
 
 def _overall_value(entry: dict, covered: list[str]) -> dict:
     parts = [entry["suites"][name] for name in covered]
-    return {"avg": statistics.geometric_mean(p["avg"] for p in parts), "details": {},
+    details = {}
+    for column in {c for p in parts for c in (p.get("details") or {})}:
+        values = [(p.get("details") or {}).get(column) for p in parts]
+        details[column] = None if any(v is None for v in values) else (
+            statistics.geometric_mean(values) if DETAILS[column][2] == "geometric" else statistics.fmean(values))
+    return {"avg": statistics.geometric_mean(p["avg"] for p in parts), "details": details,
             "low": (statistics.geometric_mean(p["low"] for p in parts) if all(p["low"] is not None for p in parts) else None),
             "rows": [r for p in parts for r in p["rows"]]}
 

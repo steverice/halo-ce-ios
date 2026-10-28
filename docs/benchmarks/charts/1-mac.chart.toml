@@ -1,6 +1,6 @@
 order = 10
 heading = "Mac"
-paragraph = "Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame."
+paragraph = "Average presentation rate, with the frame cap and vsync off, the matched-stock settings and a 2560×1920 drawable. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame. Halo OG is limited by CPU command submission, not by a frame cap."
 empty = "No Mac results yet."
 box = "M6 Mac mini"
 series_labels = ["Average fps"]

@@ -131,7 +131,13 @@ function coveredSuites(shown) {
 
 function overallValue(entry, covered) {
   const parts = covered.map((name) => entry.suites[name]);
-  return { avg: geometricMean(parts.map((p) => p.avg)), details: {}, low: parts.every((p) => p.low !== null) ? geometricMean(parts.map((p) => p.low)) : null, rows: parts.flatMap((p) => p.rows) };
+  const details = {};
+  for (const column of new Set(parts.flatMap((p) => Object.keys(p.details || {})))) {
+    const values = parts.map((p) => (p.details || {})[column]);
+    details[column] = values.some((v) => v === null || v === undefined) ? null
+      : (DETAILS[column].geometric ? geometricMean : mean)(values);
+  }
+  return { avg: geometricMean(parts.map((p) => p.avg)), details, low: parts.every((p) => p.low !== null) ? geometricMean(parts.map((p) => p.low)) : null, rows: parts.flatMap((p) => p.rows) };
 }
 
 // The builds a chart draws. For Overall the geometric mean runs over the suites every drawn build has measured,

@@ -503,7 +503,7 @@ def test_methodology_states_each_platforms_timing_method_from_the_rows():
     assert "**Vision Pro** (M2 Vision Pro; frame cap on): The app's own benchmark report" in text
     assert "master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display" in text
     assert "iPhone/iPad and Vision Pro charts use runs presented at the device's display rate" in text
-    assert "3200×2400 drawable" in text and "shadow size, model LOD and field of view" in text
+    assert "limited by its CPU command submission, not by a frame cap" in text and "shadow size, model LOD and field of view" in text
     assert "Multiplayer:** a hosted Slayer match on Chill Out and one on Blood Gulch" in text
     assert "No measurements yet" in text.split("**Multiplayer:**")[1].split("**Co-op:**")[0]
 
@@ -595,6 +595,25 @@ def test_uncapped_charts_draw_the_average_alone_and_list_gpu_frame_time_under_th
     other = next(e for e in built["entries"] if e["port"] == "opence-macos")
     assert "no GPU times reported" in charts.caption(built, {charts.entry_key(other)}, query["details"])
     spec = {**QUERY_SPEC, "query": query} if "QUERY_SPEC" in globals() else None
+
+
+def test_overall_lists_the_geometric_mean_of_each_suites_gpu_time_and_never_claims_no_data_when_there_is_some():
+    extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"}]
+    rows = snapshot_rows(*extra)
+    for row in rows:
+        if row["port"] == "visr" and row["version"] == "0.5.1":
+            row.update(gpu_p50_ms="1.0" if row["suite"] == "campaign" else "4.0", gpu_p90_ms="2.0")
+    query = {**QUERY, "metrics": ["fps_avg"], "details": ["gpu_p50_ms", "gpu_p90_ms"]}
+    built = charts.model(rows, query, "overall")
+    keys = {"visr@0.5.1@7"}
+    assert "2 ms median GPU time per rendered frame, 2 ms 90th" in charts.caption(built, keys, query["details"])
+    # One suite without a median GPU time leaves that clause out instead of averaging the rest.
+    for row in rows:
+        if row["suite"] == "multiplayer":
+            row["gpu_p50_ms"] = ""
+    built = charts.model(rows, query, "overall")
+    text = charts.caption(built, keys, query["details"])
+    assert "median GPU time" not in text and "2 ms 90th-percentile GPU time per rendered frame" in text
 
 
 def test_capped_charts_keep_the_one_percent_low_and_list_on_time_share():

@@ -94,7 +94,7 @@ DESCRIPTIONS = {
     "frame_mode": "capped (the frame cap on, as on iPhone, iPad, Apple TV and Vision Pro, which are presented runs at the device's display rate, or the 60 fps cap on a Mac) or uncapped (unlimited, vsync off, Mac only).",
     "quality_preset": "defaults (each app's own) or matched-stock (the documented stock options).",
     "warmup_s": "Warm-up seconds after player readiness.",
-    "resolution": "Drawable size in pixels. Halo OG always renders at the display's full size.",
+    "resolution": "Drawable size in pixels.",
     "cap_fps": "Frame cap in force; empty for uncapped runs. master-chef on Vision Pro is fixed at 30 fps as shipped.",
     "display_hz": "Display refresh rate.",
     "rounds": "Valid rounds behind the row.",
