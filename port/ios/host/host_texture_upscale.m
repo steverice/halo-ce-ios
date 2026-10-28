@@ -122,18 +122,28 @@ static NSString *cache_folder_for(NSString *root) {
 #endif
 }
 static NSString *cache_directory(void) { return cache_folder_for(upscale_root); }
-/* the free space the system would let a purgeable cache use (opportunistic capacity), else the volume's free space */
+/* The free space for work the player started (important-usage capacity), else the volume's free space. The opportunistic
+   figure is not used: under storage pressure iOS reports it far below the real free space (0 MB on a phone with 19 GB free).
+   Both figures are logged on every check. */
 static uint64_t storage_available(NSString *folder) {
+    struct statvfs disk;
+    uint64_t volume=statvfs(folder.fileSystemRepresentation,&disk)?0:(uint64_t)disk.f_bavail*disk.f_frsize;
+    uint64_t important=0,opportunistic=0;bool have_important=false;
 #if !TARGET_OS_TV
-    /* (tvOS does not offer opportunistic capacity: its whole app storage is purgeable; the volume's free space) */
     if(@available(iOS 11.0,macOS 10.13,*)){
-        NSNumber *value=nil;NSError *error=nil;
-        if([[NSURL fileURLWithPath:folder] getResourceValue:&value forKey:NSURLVolumeAvailableCapacityForOpportunisticUsageKey error:&error]&&value)
-            return value.unsignedLongLongValue;
+        NSNumber *value=nil;NSURL *url=[NSURL fileURLWithPath:folder];
+        if([url getResourceValue:&value forKey:NSURLVolumeAvailableCapacityForImportantUsageKey error:nil]&&value){important=value.unsignedLongLongValue;have_important=true;}
+        value=nil;
+        if([url getResourceValue:&value forKey:NSURLVolumeAvailableCapacityForOpportunisticUsageKey error:nil]&&value)opportunistic=value.unsignedLongLongValue;
     }
 #endif
-    struct statvfs disk;
-    return statvfs(folder.fileSystemRepresentation,&disk)?0:(uint64_t)disk.f_bavail*disk.f_frsize;
+    uint64_t chosen=have_important?important:volume;
+    static uint64_t logged[3];  /* (one line per change in whole MB, not one per texture) */
+    uint64_t now_mb[3]={important>>20,opportunistic>>20,volume>>20};
+    if(memcmp(logged,now_mb,sizeof(logged))){memcpy(logged,now_mb,sizeof(logged));
+    host_logf(HOST_LOG_INFO,"Upscale: storage important %llu MB, opportunistic %llu MB, volume %llu MB; using %llu MB",
+        (unsigned long long)(important>>20),(unsigned long long)(opportunistic>>20),(unsigned long long)(volume>>20),(unsigned long long)(chosen>>20));}
+    return chosen;
 }
 static const char *treatment_name(enum texture_policy_treatment value) {
     static const char *names[]={"skip","color","first-person","emissive","multipurpose","bump"};
@@ -397,7 +407,7 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     uint64_t available=storage_available(cache_directory());
     if(!texture_cache_background_may_run(available,projected)){
         /* (the queue stops here and is tried again later; not this texture's error) */
-        host_logf(HOST_LOG_WARN,"Upscale: stopped for storage: %llu MB the system offers, %llu MB needed for %016llx plus the reserve",
+        host_logf(HOST_LOG_WARN,"Upscale: stopped for storage: %llu MB available, %llu MB needed for %016llx plus the reserve",
             (unsigned long long)(available>>20),(unsigned long long)(projected>>20),(unsigned long long)d->hash);
         atomic_store(&storage_short,true);context->failed=YES;return 0;
     }
@@ -569,7 +579,7 @@ static void pump(void) {
         if(upscale_mode==TEXTURE_UPSCALE_MODE_AUTO&&!player_switch()){why="the player's switch is off";goto done;}
         {uint64_t available=storage_available(cache_directory());
             if(!texture_cache_background_may_run(available,1<<20)){
-                host_logf(HOST_LOG_WARN,"Upscale: not starting: %llu MB of storage the system offers, under the reserve",(unsigned long long)(available>>20));
+                host_logf(HOST_LOG_WARN,"Upscale: not starting: %llu MB of storage available, under the reserve",(unsigned long long)(available>>20));
                 why="low storage";goto done;}}
         if(atomic_exchange(&delete_requested,false))delete_cache();
         atomic_store(&finisher_failed,false);
