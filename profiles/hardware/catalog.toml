@@ -427,9 +427,9 @@ hardware = "iphone-a17-pro"
 profile = "iphone-15-pro.toml"
 minimum_memory_mb = 7000
 minimum_gpu_family = 9
-# Native up to 2796x1290 was measured at 60 fps; include the class's 3600x1080 wired-display allocation.
+# Native up to 2796x1290 was measured at 60 fps; include the profile's wired-display allocation (4800x1440, 6,912,000, at its 1440-line external cap).
 # The profile's numeric cap also limits faster panels to the measured 60 fps target.
-maximum_pixels = [3900000, 3900000, 3900000]
+maximum_pixels = [6920000, 6920000, 6920000]
 maximum_refresh_hertz = 60
 
 [[fallback]]
@@ -437,8 +437,8 @@ hardware = "iphone-17-pro"
 profile = "iphone-17-pro.toml"
 minimum_memory_mb = 10500
 minimum_gpu_family = 10
-# Play at 1080 lines capped at 60 (120 did not hold); 3,900,000 also admits the 2868x1320 Pro Max (3,785,760).
-maximum_pixels = [3900000, 3900000, 3900000]
+# Play at 1080 lines capped at 60 (120 did not hold); this also admits the 2868x1320 Pro Max (3,785,760) and the profile's wired-display allocation (5333x1600, 8,532,800, at its 1600-line external cap).
+maximum_pixels = [8540000, 8540000, 8540000]
 maximum_refresh_hertz = 120
 
 [[fallback]]

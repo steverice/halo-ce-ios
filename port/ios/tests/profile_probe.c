@@ -388,11 +388,10 @@ static void check_unprofiled_models(const char *shipped)
 	/* iPhone 16 Pro (A18 Pro, 120 Hz): matched by the 15 Pro's profile itself, 120 in a predictable workload. */
 	profile = resolve_model(shipped, "ios", "iPhone17,1", 9, 7600, 2622, 1206, 120);
 	assert(!profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "120"));
-	/* iPad Air 3 (A12): the iPad Pro (A10X) profile, 900 lines at 30; nothing measured is closer. */
+	/* iPad Air 3 (A12): its own measured profile, 900 lines at 30. */
 	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
-	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") &&
-		has(&profile, "display.render_height", "900") && has(&profile, "display.frame_rate", "30") &&
-		!strcmp(profile.target_hardware, "ipad-a12"));
+	assert(!profile.inherited && !strcmp(profile.model_file, "ipad-a12.toml") &&
+		has(&profile, "display.render_height", "900") && has(&profile, "display.frame_rate", "30"));
 	/* iPad Pro 12.9-inch 3rd generation (A12X, 7-core GPU): the A10X profile; its 2732x2048 menu is outside the Air 4's envelope. */
 	profile = resolve_model(shipped, "ios", "iPad8,5", 5, 3900, 2732, 2048, 120);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml"));
