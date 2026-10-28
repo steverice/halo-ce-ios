@@ -424,6 +424,9 @@ def _native(target, scenario, out, config):
         if log_stream:
             log_stream.close()
         stderr.close()
+        # Halo OG's per-run maps copy is regenerable and several GB: remove it as soon as the run is over.
+        if target['id'] == 'halo-og' and (data / 'maps').is_dir() and not (data / 'maps').is_symlink():
+            shutil.rmtree(data / 'maps', ignore_errors=True)
         # Isolated map decompression caches are regenerated at every fresh launch.
         for cache_root in (data / 'save/z', saves / 'z'):
             for cache in cache_root.glob('cache00?.map'):
