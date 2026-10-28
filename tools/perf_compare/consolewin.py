@@ -75,6 +75,18 @@ class Console:
         want = token.lower()
         return any(line.strip('"') == want for line in self.lines_since(since, partial=True))
 
+    def sync(self, clock, timeout=45.0):
+        """Wait for the console to work through what is queued (the readiness probes the adapter sent while waiting
+        for a player): print a token and wait for it, so the next query's reply is not an old echo. True if it came."""
+        mark = self.mark()
+        self.send('(print "XPSYNC")')
+        deadline = clock.now() + timeout
+        while clock.now() < deadline:
+            if self.seen('xpsync', mark):
+                return True
+            clock.sleep(0.1)
+        return False
+
     def query(self, expression, clock, timeout=3.0):
         """Send an expression and return the value line, or None when the console printed nothing back."""
         mark = self.mark()
@@ -216,6 +228,7 @@ def run_session(window, console, hooks, clock):
     """A hosted game (a match or split-screen co-op) that is already running: warm up after player readiness, then
     sample. The player count and game time are read at both ends of the window for the content checks."""
     clock.sleep(window['warmup_s'])
+    console.sync(clock)
     hooks.prepare()
     start_reads = _read_all(console, window['fingerprints'], clock)
     hooks.begin()

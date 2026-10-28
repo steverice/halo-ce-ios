@@ -149,9 +149,15 @@ def test_opening_is_not_a_console_window():
         consolewin.run_window(WINDOWS['c10'], game.console, Hooks(game), game)
 
 
+def test_sync_waits_for_the_token_after_queued_echoes():
+    game = FakeGame(timed=[(3.0, 'xpsync\r\n')])
+    assert game.console.sync(game, timeout=10) is True and game.t >= 3.0
+    assert FakeGame().console.sync(FakeGame(), timeout=1) is False
+
+
 def test_hosted_session_warms_up_samples_and_reads_players_and_time_at_both_ends():
     window = WINDOWS['mp-chillout']
-    game = FakeGame(lambda line, t: {'(list_count (players))': '1', '(game_time)': str(int(t * 30))}.get(line))
+    game = FakeGame(lambda line, t: {'(list_count (players))': '1', '(game_time)': str(int(t * 30)), '(print "XPSYNC")': 'xpsync'}.get(line))
     hooks = Hooks(game)
     out = consolewin.run_window(window, game.console, hooks, game)
     assert [name for name, _ in hooks.log] == ['prepare', 'begin', 'mid', 'end']
