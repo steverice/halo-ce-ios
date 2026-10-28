@@ -314,12 +314,12 @@ def test_gpu_time_is_split_across_the_frames_rendered_for_each_shown_frame():
     frames = [frame(10, 0.0005, 1), frame(20, 0.0005, 1), frame(30, 0.0020, 4)]
     trace = [{'PID': 1, 'Layers': [{'Layer ID': 1, 'On-Glass Drawable Timeline': frames}]}, {'PID': 2, 'Layers': []}]
     record = {'pid': 1, 'traces': [trace, trace]}
-    assert parse_metal_trace_gpu(record) == pytest.approx([(0.5, 1), (0.5, 1), (0.5, 4)])
+    assert [value for pair in parse_metal_trace_gpu(record) for value in pair] == pytest.approx([0.5, 1, 0.5, 1, 0.5, 4])
     assert gpu_metrics(parse_metal_trace_gpu(record)) == pytest.approx({'gpu_p50_ms': 0.5, 'gpu_p90_ms': 0.5})
     # Base is the usual count: a port with two buffers per frame is not counted as rendering twice.
     pairs = [frame(10, 0.002, 2), frame(20, 0.002, 2), frame(30, 0.004, 4)]
     trace = [{'PID': 1, 'Layers': [{'Layer ID': 1, 'On-Glass Drawable Timeline': pairs}]}]
-    assert parse_metal_trace_gpu({'pid': 1, 'traces': [trace]}) == pytest.approx([(2, 1), (2, 1), (2, 2)])
+    assert [v for pair in parse_metal_trace_gpu({'pid': 1, 'traces': [trace]}) for v in pair] == pytest.approx([2, 1, 2, 1, 2, 2])
     # Expensive frames still show in the percentile.
     mixed = [frame(i, 0.001, 1) for i in range(9)] + [frame(100, 0.010, 1)]
     trace = [{'PID': 1, 'Layers': [{'Layer ID': 1, 'On-Glass Drawable Timeline': mixed}]}]
